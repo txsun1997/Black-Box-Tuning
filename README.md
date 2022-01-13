@@ -1,6 +1,8 @@
 # Black-Box-Tuning
 Source code for paper "[Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514)".
 
+> Being busy recently, the code in this repo and this tutorial will be very brief. Please let me know if you find any issues.
+
 ## Prepare your environment
 
 The implementation of Black-Box Tuning is quite simple, you can check our code and easily implement it in your own environment. Or you can create a new environment to run our implementation, which is based on `Nevergrad`, `Transformers` and `FastNLP`. Optionally, we use `fitlog` to monitor experimental results. You can uncomment the fitlog-related lines in our code to use it.
