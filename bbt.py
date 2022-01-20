@@ -86,7 +86,7 @@ print('Results will be saved in {}'.format(save_path))
 
 if os.path.exists(save_path):
     print('Experiment already run.')
-    # exit()
+    exit()
 
 args.save_path = save_path
 args.bound = bound
