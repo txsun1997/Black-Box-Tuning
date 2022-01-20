@@ -11,7 +11,8 @@ from fastNLP import cache_results, Tester, DataSet
 from transformers import RobertaConfig, RobertaTokenizer
 from modeling_roberta import RobertaForMaskedLM
 from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+# from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+from metrics_fast import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 
 
 parser = argparse.ArgumentParser()
@@ -85,7 +86,7 @@ print('Results will be saved in {}'.format(save_path))
 
 if os.path.exists(save_path):
     print('Experiment already run.')
-    exit()
+    # exit()
 
 args.save_path = save_path
 args.bound = bound
