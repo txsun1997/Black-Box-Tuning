@@ -1,5 +1,6 @@
 import os
 import copy
+import time
 import random
 
 import torch
@@ -11,17 +12,19 @@ from fastNLP import cache_results, Tester, DataSet
 from transformers import RobertaConfig, RobertaTokenizer
 from modeling_roberta import RobertaForMaskedLM
 from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-# from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
-from metrics_fast import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
-
+from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+from utils import hinge_loss
+from sklearn.metrics import f1_score
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
 parser.add_argument("--k_shot", default=16, type=int)
-parser.add_argument("--batch_size", default=200, type=int)
+parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
+parser.add_argument("--print_every", default=50, type=int)
+parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
 parser.add_argument("--alg", default='CMA', type=str)
 parser.add_argument("--random_proj", default='he', type=str)
@@ -42,6 +45,8 @@ alg = args.alg
 random_proj = args.random_proj
 seed = args.seed
 loss_type = args.loss_type
+print_every = args.print_every
+eval_every = args.eval_every
 # if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
 #     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
@@ -56,7 +61,6 @@ model_name = 'roberta-large'
 # bound = math.sqrt(intrinsic_dim)
 # bound = math.pow(intrinsic_dim, 0.75)
 bound = 5
-eval_every = 100
 
 if task_name in ['sst2', 'yelpp', 'rte', 'mrpc']:
     num_labels = 2
@@ -129,57 +133,84 @@ class LMForwardAPI:
         if random_proj == 'normal':
             for p in self.linear.parameters():
                 torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
-        self.task_name = task_name
-        if task_name == 'sst2':
-            self.metric = SST2Metric(target='labels', pred='logits')
-            self.metric_key = 'acc'
-        elif task_name == 'agnews':
-            self.metric = AGNewsMetric(target='labels', pred='logits')
-            self.metric_key = 'acc'
-        elif task_name == 'yelpp':
-            self.metric = YelpPMetric(target='labels', pred='logits')
-            self.metric_key = 'acc'
-        elif task_name == 'dbpedia':
-            self.metric = DBPediaMetric(target='labels', pred='logits')
-            self.metric_key = 'acc'
-        elif task_name == 'rte':
-            self.metric = RTEMetric(target='labels', pred='logits')
-            self.metric_key = 'acc'
-        elif task_name == 'mrpc':
-            self.metric = MRPCMetric(target='labels', pred='logits')
-            self.metric_key = 'f1'
-        elif task_name == 'snli':
-            self.metric = SNLIMetric(target='labels', pred='logits')
-            self.metric_key = 'acc'
-        else:
-            raise NotImplementedError
-        self.tester = Tester(data=train_data, model=self.model, metrics=self.metric, batch_size=batch_size,
-                             num_workers=4, device=device, verbose=1, use_tqdm=False)
-        self.dev_tester = Tester(data=dev_data, model=self.model, metrics=self.metric, batch_size=batch_size,
-                                 num_workers=4, device=device, verbose=1, use_tqdm=False)
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.best_prompt = None
         self.num_call = 0
         self.save_path = save_path
+        self.print_every = print_every
         self.eval_every = eval_every
         self.loss_type = loss_type
         if save_path is not None:
             os.makedirs(save_path, exist_ok=True)
+        if task_name == 'sst2':
+            self.metric = SST2Metric(target='labels', pred='logits')
+            self.metric_key = 'acc'
+            self.metric_name = 'SST2Metric'
+        elif task_name == 'agnews':
+            self.metric = AGNewsMetric(target='labels', pred='logits')
+            self.metric_key = 'acc'
+            self.metric_name = 'AGNewsMetric'
+        elif task_name == 'yelpp':
+            self.metric = YelpPMetric(target='labels', pred='logits')
+            self.metric_key = 'acc'
+            self.metric_name = 'YelpPMetric'
+        elif task_name == 'dbpedia':
+            self.metric = DBPediaMetric(target='labels', pred='logits')
+            self.metric_key = 'acc'
+            self.metric_name = 'DBPediaMetric'
+        elif task_name == 'rte':
+            self.metric = RTEMetric(target='labels', pred='logits')
+            self.metric_key = 'acc'
+            self.metric_name = 'RTEMetric'
+        elif task_name == 'mrpc':
+            self.metric = MRPCMetric(target='labels', pred='logits')
+            self.metric_key = 'f1'
+            self.metric_name = 'MRPCMetric'
+        elif task_name == 'snli':
+            self.metric = SNLIMetric(target='labels', pred='logits')
+            self.metric_key = 'acc'
+            self.metric_name = 'SNLIMetric'
+        else:
+            raise NotImplementedError
+        self.margin = self.metric.margin
+        self.ce_loss = torch.nn.CrossEntropyLoss(reduce='sum')
 
-    def get_tokenizer(self):
-        return self.tokenizer
+    def calc_metric(self, logits, target):
+        label_map = self.metric.label_map
 
-    def zero_shot_eval(self):
-        self.model.set_prompt_embedding(None)
-        print('Evaluating on training data...')
-        self.tester.test()
-        print('Evaluating on dev data...')
-        self.dev_tester.test()
+        converted_target = target.clone()
+        for key, val in label_map.items():
+            converted_target[target == key] = val
+        interest_index = list(label_map.keys())
+        logits = logits[:, interest_index]
+        pred = logits.argmax(dim=-1)
 
-    def eval(self, prompt_embedding, test_data=None):
+        if self.metric_key == 'acc':
+            perf = (pred == converted_target).sum() / len(target)
+        elif self.metric_key == 'f1':
+            perf = f1_score(converted_target.detach().cpu().numpy().tolist(),
+                            pred.detach().cpu().numpy().tolist())
+        else:
+            raise KeyError('[Metric] Only support [acc, f1]')
+
+        if self.loss_type == 'hinge':
+            loss = hinge_loss(logits, converted_target, margin=self.margin, reduce='sum').item() / len(target)
+        elif self.loss_type == 'ce':
+            loss = self.ce_loss(logits, converted_target).item() / len(target)
+        elif self.loss_type == 'perf':
+            loss = -1 * perf
+        else:
+            raise KeyError('[Loss] Only support [hinge, ce, perf]')
+
+        return loss, perf
+
+    def eval(self, prompt_embedding=None, test_data=None):
         self.num_call += 1
-        tmp_prompt = copy.deepcopy(prompt_embedding)
+        if prompt_embedding is None:
+            prompt_embedding = self.best_prompt
+        else:
+            tmp_prompt = copy.deepcopy(prompt_embedding)
         prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
         prompt_embedding = self.linear(prompt_embedding)  # Az
         if self.init_prompt is not None:
@@ -187,76 +218,66 @@ class LMForwardAPI:
         # print(prompt_embedding.view(n_prompt_tokens, -1))
         self.model.set_prompt_embedding(prompt_embedding)
 
-        if self.task_name == 'sst2':
-            metric_name = 'SST2Metric'
-        elif self.task_name == 'agnews':
-            metric_name = 'AGNewsMetric'
-        elif self.task_name == 'yelpp':
-            metric_name = 'YelpPMetric'
-        elif self.task_name == 'dbpedia':
-            metric_name = 'DBPediaMetric'
-        elif self.task_name == 'rte':
-            metric_name = 'RTEMetric'
-        elif self.task_name == 'mrpc':
-            metric_name = 'MRPCMetric'
-        elif self.task_name == 'snli':
-            metric_name = 'SNLIMetric'
-        else:
-            raise NotImplementedError
-
-        if test_data is not None:
+        if isinstance(test_data, DataSet):
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
                                  num_workers=4, device=device, verbose=1, use_tqdm=True)
             results = test_tester.test()
-            test_acc = results[metric_name][self.metric_key]
+            test_acc = results[self.metric_name][self.metric_key]
             # fitlog.add_best_metric(test_acc, name='test_acc')
+            return test_acc
         else:
-            results = self.tester.test()
+            # forward_start_time = time.time()
+            for k, v in train_data.items():
+                train_data[k] = v.to(device)
+            with torch.no_grad():
+                logits = self.model(**train_data)['logits']
+            # forward_end_time = time.time()
 
-            perf = -1.0 * results[metric_name][self.metric_key]  # -accuracy
-            hinge_loss = results[metric_name]['hinge']
-            ce_loss = results[metric_name]['ce']
+            loss, perf = self.calc_metric(logits, train_data['labels'])
+            # metric_end_time = time.time()
+            # print('Forward time: {}s | Metric time: {}s'.format(forward_end_time - forward_start_time,
+            #                                                     metric_end_time - forward_end_time))
+            # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
-            # fitlog.add_loss(hinge_loss, name='hinge', step=self.num_call)
-            # fitlog.add_metric(-1.0 * perf, name='train_acc', step=self.num_call)
-
-            if perf < self.best_train_perf:
+            if perf > self.best_train_perf:
                 self.best_train_perf = perf
-                # fitlog.add_best_metric(-1.0 * self.best_train_perf, name='train_acc')
-
-            print(
-                '[# API Calls {}] Hinge loss: {}. Cross entropy loss: {}. Current performance: {}. Best performance so far: {}'.format(
-                    self.num_call,
-                    hinge_loss,
-                    ce_loss,
-                    -1.0 * perf,
-                    -1.0 * self.best_train_perf))
+                # fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
             if self.save_path is not None:
                 with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
-                    fout.write('{}\t{}\n'.format(self.num_call, -1.0 * perf))
+                    fout.write('{}\t{}\n'.format(self.num_call, perf))
+
+            if self.num_call % self.print_every == 0:
+                print(
+                    '[# API Calls {}] loss: {}. Current perf: {}. Best perf so far: {}'.format(
+                        self.num_call,
+                        round(float(loss), 4),
+                        round(float(perf), 4),
+                        round(float(self.best_train_perf), 4)))
 
             if self.num_call % self.eval_every == 0:
                 print('********* Evaluated on dev set *********')
-                dev_results = self.dev_tester.test()
-                dev_perf = dev_results[metric_name][self.metric_key]
+                for k, v in dev_data.items():
+                    dev_data[k] = v.to(device)
+                with torch.no_grad():
+                    logits = self.model(**dev_data)['logits']
+
+                dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
-                if dev_perf > self.best_dev_perf:
+                if dev_perf >= self.best_dev_perf:
                     self.best_dev_perf = dev_perf
                     # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best_prompt = copy.deepcopy(tmp_prompt)
                 if self.save_path is not None:
                     with open(os.path.join(self.save_path, 'dev_acc.txt'), 'a') as fout:
                         fout.write('{}\t{}\n'.format(self.num_call, dev_perf))
+                print('Dev loss: {}. Current dev perf: {}. Best dev perf: {}'.format(
+                    round(float(dev_loss), 4),
+                    round(float(dev_perf), 4),
+                    round(float(self.best_dev_perf), 4)))
                 print('********* Done *********')
-            if self.loss_type == 'perf':
-                return perf
-            elif self.loss_type == 'hinge':
-                return hinge_loss
-            elif self.loss_type == 'ce':
-                return ce_loss
-            else:
-                raise ValueError
+            return loss
 
 
 tokenizer = RobertaTokenizer.from_pretrained(model_name)
@@ -330,6 +351,20 @@ print('\n# of test data: {}'.format(len(test_data)))
 print('Example:')
 print(test_data[0])
 
+train_data = {
+    'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+    'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+    'mask_pos': torch.tensor(train_data['mask_pos'].get(list(range(len(train_data))))),
+    'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+}
+
+dev_data = {
+    'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(train_data))))),
+    'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(train_data))))),
+    'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(train_data))))),
+    'labels': torch.tensor(dev_data['labels'].get(list(range(len(train_data))))),
+}
+
 model_forward_api = LMForwardAPI(
     model_name=model_name,
     n_prompt_tokens=n_prompt_tokens,
@@ -339,23 +374,22 @@ model_forward_api = LMForwardAPI(
     init_prompt_path=init_prompt_path
 )
 
-# print('********* Zero-shot Performance *********')
-# model_forward_api.zero_shot_eval()
-# model_forward_api.num_call = 0
-# print('********* Done *********')
-
 if bound > 0:
     parametrization = ng.p.Array(shape=(intrinsic_dim,)).set_bounds(lower=-1 * bound, upper=bound)
 else:
     parametrization = ng.p.Array(shape=(intrinsic_dim,))
 
 optim = ng.optimizers.registry[alg](parametrization=parametrization, budget=budget, num_workers=4)
+start_time = time.time()
 for i in range(budget):
     x = optim.ask()
     y = model_forward_api.eval(*x.args)
     optim.tell(x, y)
-print("Done.")
+end_time = time.time()
+print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
 # recommendation = optim.recommend()
-best_prompt = model_forward_api.best_prompt
-test_acc = model_forward_api.eval(prompt_embedding=best_prompt, test_data=test_data)
+# best_prompt = model_forward_api.best_prompt
+print('Evaluate on test data...')
+test_acc = model_forward_api.eval(test_data=test_data)
+print('Test acc: {}'.format(round(test_acc, 4)))
 # fitlog.finish()

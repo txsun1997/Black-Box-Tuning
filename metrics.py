@@ -4,6 +4,7 @@ from fastNLP.core.metrics import MetricBase
 from fastNLP.core.utils import _get_func_signature
 from sklearn.metrics import f1_score, accuracy_score
 from transformers import RobertaTokenizer
+from utils import hinge_loss
 
 
 class SST2Metric(MetricBase):
@@ -12,7 +13,7 @@ class SST2Metric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -33,34 +34,30 @@ class SST2Metric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
 
     def get_metric(self, reset=True):
         acc = accuracy_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'acc': acc,
                 'hinge': hinge_loss,
@@ -73,7 +70,7 @@ class YelpPMetric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -94,34 +91,29 @@ class YelpPMetric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
 
     def get_metric(self, reset=True):
         acc = accuracy_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'acc': acc,
                 'hinge': hinge_loss,
@@ -134,7 +126,7 @@ class AGNewsMetric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -157,34 +149,29 @@ class AGNewsMetric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
 
     def get_metric(self, reset=True):
         acc = accuracy_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'acc': acc,
                 'hinge': hinge_loss,
@@ -197,7 +184,7 @@ class DBPediaMetric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -230,34 +217,29 @@ class DBPediaMetric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
 
     def get_metric(self, reset=True):
         acc = accuracy_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'acc': acc,
                 'hinge': hinge_loss,
@@ -270,7 +252,7 @@ class MRPCMetric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -291,34 +273,29 @@ class MRPCMetric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
 
     def get_metric(self, reset=True):
         f1 = f1_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'f1': f1,
                 'hinge': hinge_loss,
@@ -370,7 +347,7 @@ class RTEMetric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -391,33 +368,28 @@ class RTEMetric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
     def get_metric(self, reset=True):
         acc = accuracy_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'acc': acc,
                 'hinge': hinge_loss,
@@ -431,7 +403,7 @@ class SNLIMetric(MetricBase):
         self._init_param_map(pred=pred, target=target, seq_len=seq_len)
         self._pred = []
         self._target = []
-        self.hinge_loss = 0.0
+        self.hinge = 0.0
         self.ce_loss = 0.0
         self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
         self.margin = 2
@@ -453,33 +425,28 @@ class SNLIMetric(MetricBase):
         # pred: batch_size x seq_len x vocab_size
         self.ce_loss += self.ce_fct(pred, target).item()
 
-        target = target.cpu().numpy().tolist()
-        for t in target:
-            self._target.append(self.label_map[t])
-
         # calculate hinge loss
+        hinge_target = target.clone()
+        for key, val in self.label_map.items():
+            hinge_target[target==key] = val
+
+        for t in hinge_target.cpu().numpy().tolist():
+            self._target.append(t)
+
         interest_index = list(self.label_map.keys())
-        for i in range(len(target)):
-            tgt = self.label_map[target[i]]
-            prd = pred[i, interest_index].cpu().numpy().tolist()
-            for j, p in enumerate(prd):
-                if j == tgt:
-                    continue
-                else:
-                    tmp = p - prd[tgt] + self.margin
-                    if tmp > 0:
-                        self.hinge_loss += tmp
-        pred = pred[:, interest_index].argmax(dim=-1).detach().cpu().numpy().tolist()
+        pred = pred[:, interest_index]
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
     def get_metric(self, reset=True):
         acc = accuracy_score(self._target, self._pred)
-        hinge_loss = self.hinge_loss / len(self._target)
+        hinge_loss = self.hinge / len(self._target)
         ce_loss = self.ce_loss / len(self._target)
         if reset:
             self._target = []
             self._pred = []
-            self.hinge_loss = 0.0
+            self.hinge = 0.0
             self.ce_loss = 0.0
         return {'acc': acc,
                 'hinge': hinge_loss,
