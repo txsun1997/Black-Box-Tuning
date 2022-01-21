@@ -8,6 +8,7 @@ import torch
 import argparse
 import numpy as np
 import nevergrad as ng
+from nevergrad.optimization.families import ParametrizedCMA
 from fastNLP import cache_results, Tester, DataSet
 from transformers import RobertaConfig, RobertaTokenizer
 from modeling_roberta import RobertaForMaskedLM
@@ -31,6 +32,7 @@ parser.add_argument("--random_proj", default='he', type=str)
 parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--loss_type", default='hinge', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
+parser.add_argument("--parallel", action='store_true', help='whether to use parallel evaluation')
 args = parser.parse_args()
 
 # below are free hyper-params
@@ -50,6 +52,9 @@ eval_every = args.eval_every
 # if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
 #     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
+parallel = args.parallel
+if parallel:
+    from concurrent import futures
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -359,10 +364,10 @@ train_data = {
 }
 
 dev_data = {
-    'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(train_data))))),
-    'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(train_data))))),
-    'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(train_data))))),
-    'labels': torch.tensor(dev_data['labels'].get(list(range(len(train_data))))),
+    'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+    'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+    'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(dev_data))))),
+    'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
 }
 
 model_forward_api = LMForwardAPI(
@@ -379,12 +384,18 @@ if bound > 0:
 else:
     parametrization = ng.p.Array(shape=(intrinsic_dim,))
 
-optim = ng.optimizers.registry[alg](parametrization=parametrization, budget=budget, num_workers=4)
+optim = ng.optimizers.registry[alg](parametrization=parametrization, budget=budget, num_workers=16)
+# cma = ParametrizedCMA()
 start_time = time.time()
-for i in range(budget):
-    x = optim.ask()
-    y = model_forward_api.eval(*x.args)
-    optim.tell(x, y)
+if parallel:
+    with futures.ThreadPoolExecutor(
+            max_workers=optim.num_workers) as executor:  # the executor will evaluate the function in multiple threads
+        recommendation = optim.minimize(model_forward_api.eval, executor=executor)
+else:
+    for i in range(budget):
+        x = optim.ask()
+        y = model_forward_api.eval(*x.args)
+        optim.tell(x, y)
 end_time = time.time()
 print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
 # recommendation = optim.recommend()

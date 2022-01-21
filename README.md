@@ -27,13 +27,13 @@ Now you can run Black-Box Tuning with `run.sh`:
 bash run.sh
 ```
 
-Results will be saved in a directory named `results/`. In general, you will obtain the following results:
+Results will be saved in a directory named `results/`. In general, you will obtain the following results in ~15 minutes:
 
 | SST-2 split | Best Accuracy |
 | ----------- | ------------- |
 | Train       | 100           |
-| Dev         | 96.87         |
-| Test        | 88.19         |
+| Dev         | 96.88         |
+| Test        | 88.88         |
 
 To reproduce other experiments in our paper, change the arguments of `bbt.py`, for example, 
 
