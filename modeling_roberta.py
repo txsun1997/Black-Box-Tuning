@@ -685,7 +685,7 @@ class RobertaModel(RobertaPreTrainedModel):
         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
         # ourselves in which case we just need to make it broadcastable to all heads.
         if concat_prompt and prompt_embedding is not None:  # if concat prompt embedding, we should also extend attention mask
-            n_prompt_tokens = prompt_embedding.shape[0]
+            n_prompt_tokens = prompt_embedding.shape[1]
             attention_mask_padding = torch.ones(input_shape[0], n_prompt_tokens).to(attention_mask.device)
             attention_mask = torch.cat([attention_mask_padding, attention_mask], 1).to(input_ids.device)
             input_shape = attention_mask.shape
@@ -715,15 +715,15 @@ class RobertaModel(RobertaPreTrainedModel):
         # extend inputs_embeds
         if prompt_embedding is not None:
             if concat_prompt: # concat prompt embedding with embedding_output
-                prompt_embedding = prompt_embedding.repeat(input_shape[0], 1, 1).to(embedding_output.device)
+                # prompt_embedding = prompt_embedding.repeat(input_shape[0], 1, 1).to(embedding_output.device)
                 embedding_output = torch.cat([prompt_embedding, embedding_output], dim=1)
             else:
-                n_prompt_tokens, prompt_dim = prompt_embedding.shape
-                prompt_padding = torch.zeros(input_shape[1] - n_prompt_tokens - 1, prompt_dim).to(embedding_output.device)
-                extended_prompt_embedding = torch.cat([prompt_embedding, prompt_padding], dim=0)
-                pre_padding = torch.zeros(1, prompt_dim).to(embedding_output.device)
-                extended_prompt_embedding = torch.cat([pre_padding, extended_prompt_embedding], dim=0) # for <CLS>
-                extended_prompt_embedding = extended_prompt_embedding.repeat(input_shape[0], 1, 1)
+                bsz, n_prompt_tokens, prompt_dim = prompt_embedding.shape
+                prompt_padding = torch.zeros(bsz, input_shape[1] - n_prompt_tokens - 1, prompt_dim).to(embedding_output.device)
+                extended_prompt_embedding = torch.cat([prompt_embedding, prompt_padding], dim=1)
+                pre_padding = torch.zeros(bsz, 1, prompt_dim).to(embedding_output.device)
+                extended_prompt_embedding = torch.cat([pre_padding, extended_prompt_embedding], dim=1) # for <CLS>
+                # extended_prompt_embedding = extended_prompt_embedding.repeat(input_shape[0], 1, 1)
                 embedding_output = embedding_output + extended_prompt_embedding
         encoder_outputs = self.encoder(
             embedding_output,
@@ -931,6 +931,7 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
             output_hidden_states=None,
             return_dict=None,
             mask_pos=None,
+            prompt_embedding=None,
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
@@ -942,8 +943,13 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if self.prompt_embedding is not None:
-            self.prompt_embedding = self.prompt_embedding.reshape(self.n_prompt_tokens, -1).to(input_ids.device)
+        if prompt_embedding is None:
+            prompt_embedding = self.prompt_embedding
+
+        if prompt_embedding is not None:
+            bsz = input_ids.shape[0]
+            prompt_dim = prompt_embedding.shape[-1]
+            prompt_embedding = prompt_embedding.reshape(-1, self.n_prompt_tokens, prompt_dim)[:bsz].to(input_ids.device)
             if self.concat_prompt:
                 mask_pos = mask_pos + self.n_prompt_tokens
 
@@ -959,7 +965,7 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            prompt_embedding=self.prompt_embedding,
+            prompt_embedding=prompt_embedding,
             concat_prompt=self.concat_prompt,
         )
         sequence_output = outputs[0]

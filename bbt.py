@@ -7,8 +7,7 @@ import torch
 # import fitlog
 import argparse
 import numpy as np
-import nevergrad as ng
-from nevergrad.optimization.families import ParametrizedCMA
+import cma
 from fastNLP import cache_results, Tester, DataSet
 from transformers import RobertaConfig, RobertaTokenizer
 from modeling_roberta import RobertaForMaskedLM
@@ -32,7 +31,7 @@ parser.add_argument("--random_proj", default='he', type=str)
 parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--loss_type", default='hinge', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
-parser.add_argument("--parallel", action='store_true', help='whether to use parallel evaluation')
+parser.add_argument("--parallel", action='store_true', help='whether to allow parallel evaluation')
 args = parser.parse_args()
 
 # below are free hyper-params
@@ -53,8 +52,6 @@ eval_every = args.eval_every
 #     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
 parallel = args.parallel
-if parallel:
-    from concurrent import futures
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -78,7 +75,7 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}'.format(
+save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
     task_name,
     n_prompt_tokens * 1024,
     intrinsic_dim,
@@ -89,7 +86,8 @@ save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_
     budget,
     seed,
     cat_or_add,
-    random_proj
+    random_proj,
+    'parallel' if parallel else 'serial',
 )
 print('Results will be saved in {}'.format(save_path))
 
@@ -214,16 +212,35 @@ class LMForwardAPI:
         self.num_call += 1
         if prompt_embedding is None:
             prompt_embedding = self.best_prompt
+        if test_data is None:
+            bsz = len(dev_data['input_ids'])  # batch size of dev data is the orignal batch size of training data
         else:
-            tmp_prompt = copy.deepcopy(prompt_embedding)
-        prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
-        prompt_embedding = self.linear(prompt_embedding)  # Az
-        if self.init_prompt is not None:
-            prompt_embedding = prompt_embedding + self.init_prompt  # Az + p_0
-        # print(prompt_embedding.view(n_prompt_tokens, -1))
+            bsz = batch_size  # for test data
+        tmp_prompt = copy.deepcopy(prompt_embedding)  # list or numpy.ndarray
+        if isinstance(prompt_embedding, list):  # multiple queries
+            pe_list = []
+            for pe in prompt_embedding:
+                z = torch.tensor(pe).type(torch.float32)  # z
+                z = self.linear(z)  # Az
+                if self.init_prompt is not None:
+                    z = z + self.init_prompt  # Az + p_0
+                pe_list.append(z.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1))
+            prompt_embedding = torch.cat(pe_list, dim=0)  # num_workers*bsz x prompt_len x dim
+            assert len(prompt_embedding) == len(train_data['input_ids'])
+        elif isinstance(prompt_embedding, np.ndarray):  # single query or None
+            prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
+            prompt_embedding = self.linear(prompt_embedding)  # Az
+            if self.init_prompt is not None:
+                prompt_embedding = prompt_embedding + self.init_prompt  # Az + p_0
+            prompt_embedding = prompt_embedding.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1)
+        else:
+            raise ValueError('[Prompt Embedding] Only support [list, numpy.ndarray]')
+
         self.model.set_prompt_embedding(prompt_embedding)
 
         if isinstance(test_data, DataSet):
+            if prompt_embedding.shape[0] > bsz:
+                raise ValueError('Provide a single prompt embedding for testing.')
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
                                  num_workers=4, device=device, verbose=1, use_tqdm=True)
             results = test_tester.test()
@@ -231,17 +248,25 @@ class LMForwardAPI:
             # fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
-            # forward_start_time = time.time()
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
                 logits = self.model(**train_data)['logits']
-            # forward_end_time = time.time()
-
-            loss, perf = self.calc_metric(logits, train_data['labels'])
-            # metric_end_time = time.time()
-            # print('Forward time: {}s | Metric time: {}s'.format(forward_end_time - forward_start_time,
-            #                                                     metric_end_time - forward_end_time))
+            if parallel:  # we have multiple queries
+                all_losses, all_perfs = [], []
+                for i in range(len(logits) // bsz):
+                    tmp_logits = logits[i * bsz:i * bsz + bsz]
+                    tmp_target = train_data['labels'][i * bsz:i * bsz + bsz]
+                    tmp_loss, tmp_perf = self.calc_metric(tmp_logits, tmp_target)
+                    all_losses.append(tmp_loss)
+                    all_perfs.append(tmp_perf)
+                loss = min(all_losses)
+                best_sol = all_losses.index(loss)  # argmin
+                perf = all_perfs[best_sol]  # corresponding performance
+                tmp_prompt = tmp_prompt[best_sol]  # numpy.ndarray
+                prompt_embedding = pe_list[best_sol]  # to be prepended to the input
+            else:  # single query
+                loss, perf = self.calc_metric(logits, train_data['labels'])
             # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
             # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
@@ -263,6 +288,8 @@ class LMForwardAPI:
 
             if self.num_call % self.eval_every == 0:
                 print('********* Evaluated on dev set *********')
+                if parallel:  # if we have multiple queries, use the one that achieves minimal loss
+                    self.model.set_prompt_embedding(prompt_embedding)
                 for k, v in dev_data.items():
                     dev_data[k] = v.to(device)
                 with torch.no_grad():
@@ -282,7 +309,10 @@ class LMForwardAPI:
                     round(float(dev_perf), 4),
                     round(float(self.best_dev_perf), 4)))
                 print('********* Done *********')
-            return loss
+            if parallel:
+                return all_losses
+            else:
+                return loss
 
 
 tokenizer = RobertaTokenizer.from_pretrained(model_name)
@@ -379,27 +409,37 @@ model_forward_api = LMForwardAPI(
     init_prompt_path=init_prompt_path
 )
 
-if bound > 0:
-    parametrization = ng.p.Array(shape=(intrinsic_dim,)).set_bounds(lower=-1 * bound, upper=bound)
-else:
-    parametrization = ng.p.Array(shape=(intrinsic_dim,))
-
-optim = ng.optimizers.registry[alg](parametrization=parametrization, budget=budget, num_workers=16)
-# cma = ParametrizedCMA()
-start_time = time.time()
+popsize = 4 + 3 * np.log(intrinsic_dim)
+cma_opts = {
+    'seed': seed,
+    'popsize': popsize,
+    'bounds': [-1 * bound, 1 * bound],
+    'maxiter': budget if parallel else budget // popsize,
+    'verbose': -1,
+}
+es = cma.CMAEvolutionStrategy(intrinsic_dim * [0], 0.5, inopts=cma_opts)
+print('Population Size: {}'.format(es.popsize))
+print('{} Evaluation.'.format('Parallel' if parallel else 'Serial'))
 if parallel:
-    with futures.ThreadPoolExecutor(
-            max_workers=optim.num_workers) as executor:  # the executor will evaluate the function in multiple threads
-        recommendation = optim.minimize(model_forward_api.eval, executor=executor)
-else:
-    for i in range(budget):
-        x = optim.ask()
-        y = model_forward_api.eval(*x.args)
-        optim.tell(x, y)
+    # expand training data to a larger batch for parallel evaluation
+    train_data['input_ids'] = train_data['input_ids'].repeat(es.popsize, 1)
+    train_data['attention_mask'] = train_data['attention_mask'].repeat(es.popsize, 1)
+    train_data['mask_pos'] = train_data['mask_pos'].repeat(es.popsize)
+    train_data['labels'] = train_data['labels'].repeat(es.popsize)
+
+# opt = cma.CMAOptions()
+start_time = time.time()
+while not es.stop():
+    solutions = es.ask()
+    if parallel:
+        fitnesses = model_forward_api.eval(solutions)
+    else:
+        fitnesses = [model_forward_api.eval(x) for x in solutions]
+    es.tell(solutions, fitnesses)
+    # es.logger.add()  # write data to disc to be plotted
+    # es.disp()
 end_time = time.time()
 print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
-# recommendation = optim.recommend()
-# best_prompt = model_forward_api.best_prompt
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
 print('Test acc: {}'.format(round(test_acc, 4)))
