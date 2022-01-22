@@ -3,7 +3,7 @@ Source code for paper "[Black-Box Tuning for Language-Model-as-a-Service](https:
 
 ## Prepare your environment
 
-The implementation of Black-Box Tuning is quite simple, you can check our code and easily implement it in your own environment. Or you can create a new environment to run our implementation, which is based on `Nevergrad`, `Transformers` and `FastNLP`. Optionally, we use `fitlog` to monitor experimental results. You can uncomment the fitlog-related lines in our code to use it.
+The implementation of Black-Box Tuning is quite simple, you can check our code and easily implement it in your own environment. Or you can create a new environment to run our implementation, which is based on `pycma`, `Transformers` and `FastNLP`. Optionally, you can use `fitlog` to monitor experimental results. You can uncomment the fitlog-related lines in our code to use it.
 
 ```bash
 conda create --name bbt python=3.8
