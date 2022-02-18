@@ -32,6 +32,7 @@ parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--loss_type", default='hinge', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
 parser.add_argument("--parallel", action='store_true', help='whether to allow parallel evaluation')
+parser.add_argument("--inference_framework", default='pt', type=str, help='which inference framework to use. (currently supports pt and ort)')
 args = parser.parse_args()
 
 # below are free hyper-params
@@ -52,6 +53,7 @@ eval_every = args.eval_every
 #     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
 parallel = args.parallel
+inference_framework = args.inference_framework
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -115,8 +117,12 @@ class LMForwardAPI:
                  loss_type='hinge', init_prompt_path=None):
         self.config = RobertaConfig.from_pretrained(model_name)
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-        self.model = RobertaForMaskedLM.from_pretrained(model_name, config=self.config,
-                                                        n_prompt_tokens=n_prompt_tokens)
+        self.model = RobertaForMaskedLM.from_pretrained(
+            model_name,
+            config=self.config,
+            n_prompt_tokens=n_prompt_tokens,
+            inference_framework=inference_framework
+        )
         self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         if cat_or_add == 'cat':
             self.model.set_concat_prompt(True)
@@ -195,7 +201,7 @@ class LMForwardAPI:
             perf = f1_score(converted_target.detach().cpu().numpy().tolist(),
                             pred.detach().cpu().numpy().tolist())
         else:
-            raise KeyError('[Metric] Only support [acc, f1]')
+            raise KeyError(f'[Metric] Only support [acc, f1], got {self.metric_key} instead.')
 
         if self.loss_type == 'hinge':
             loss = hinge_loss(logits, converted_target, margin=self.margin, reduce='sum').item() / len(target)
@@ -204,7 +210,7 @@ class LMForwardAPI:
         elif self.loss_type == 'perf':
             loss = -1 * perf
         else:
-            raise KeyError('[Loss] Only support [hinge, ce, perf]')
+            raise KeyError(f'[Loss] Only support [hinge, ce, perf], got {self.loss_type} instead.')
 
         return loss, perf
 
@@ -234,8 +240,7 @@ class LMForwardAPI:
                 prompt_embedding = prompt_embedding + self.init_prompt  # Az + p_0
             prompt_embedding = prompt_embedding.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1)
         else:
-            raise ValueError('[Prompt Embedding] Only support [list, numpy.ndarray]')
-
+            raise ValueError(f'[Prompt Embedding] Only support [list, numpy.ndarray], got `{type(prompt_embedding)}` instead.')
         self.model.set_prompt_embedding(prompt_embedding)
 
         if isinstance(test_data, DataSet):
@@ -251,7 +256,12 @@ class LMForwardAPI:
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
-                logits = self.model(**train_data)['logits']
+                logits = self.model(
+                    input_ids=train_data['input_ids'],
+                    attention_mask=train_data['attention_mask'],
+                    mask_pos=train_data['mask_pos'],
+                )['logits']
+
             if parallel:  # we have multiple queries
                 all_losses, all_perfs = [], []
                 for i in range(len(logits) // bsz):
@@ -293,7 +303,11 @@ class LMForwardAPI:
                 for k, v in dev_data.items():
                     dev_data[k] = v.to(device)
                 with torch.no_grad():
-                    logits = self.model(**dev_data)['logits']
+                    logits = self.model(
+                        input_ids=dev_data['input_ids'],
+                        attention_mask=dev_data['attention_mask'],
+                        mask_pos=dev_data['mask_pos'],
+                    )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)

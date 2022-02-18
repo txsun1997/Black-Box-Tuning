@@ -9,4 +9,5 @@ python bbt.py \
   --cat_or_add "add" \
   --budget 5000 \
   --print_every 50 \
-  --eval_every 100
+  --eval_every 100 \
+  --inference_framework "ort"
