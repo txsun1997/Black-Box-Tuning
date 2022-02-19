@@ -73,7 +73,7 @@ We provided an end-to-end inference optimization solution.
 Only one line of code is needed for ~2x inference speed.
 
 To export a bbt model based on PyTorch to an Onnx model, 
-you can run `export_and_optimize.py` with all parameters set to default to get a demo onnx model.
+you can run `export_and_optimize.py` with all arguments set to default to get a demo onnx model.
 ```bash
 python export_and_optimize.py
 ```
@@ -83,7 +83,7 @@ By setting parameter `inference_framework` to `'ort'` and `onnx_model_path` to `
 a faster (but a little less accurate) version of BBT is ready.
 
 To add some flexibility to model optimization, we provided some options in `export_and_optimize.py`.
-You can adjust these parameters in `export_and_optimize.sh`. Here is an example.
+You can adjust these arguments in `export_and_optimize.sh`. Here is an example.
 ```bash
 python export_and_optimize.py \
   --batch_size 32 \
@@ -93,8 +93,8 @@ python export_and_optimize.py \
   --exported_model_name 'model' \
   --optimized_model_name 'optimized_model'
 ```
-You can get the following results in ~4.4 ± 0.1 minutes, 
-compared to pytorch version of bbt whose performance time is ~8.8 ± 0.1 minutes (depends on hardware settings)
+You can get the following results in 4.4 ± 0.1 minutes, 
+compared to pytorch version of bbt whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
 
 | SST-2 split | Best Accuracy  |
 | ----------- | -------------- |
