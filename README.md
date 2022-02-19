@@ -94,7 +94,7 @@ python export_and_optimize.py \
   --optimized_model_name 'optimized_model'
 ```
 You can get the following results in 4.4 ± 0.1 minutes, 
-compared to pytorch version of bbt whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
+compared to pytorch version of BBT whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
 
 | SST-2 split | Best Accuracy   |
 | ----------- | --------------- |
