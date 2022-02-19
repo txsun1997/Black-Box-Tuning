@@ -31,8 +31,20 @@ parser.add_argument("--random_proj", default='he', type=str)
 parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--loss_type", default='hinge', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
-parser.add_argument("--parallel", action='store_true', help='whether to allow parallel evaluation')
-parser.add_argument("--inference_framework", default='pt', type=str, help='which inference framework to use. (currently supports pt and ort)')
+parser.add_argument("--parallel", action='store_true', help='Whether to allow parallel evaluation')
+parser.add_argument(
+    "--inference_framework",
+    default='pt',
+    type=str,
+    help='''Which inference framework to use. 
+         Currently supports `pt` and `ort`, standing for pytorch and Microsoft onnxruntime respectively'''
+)
+parser.add_argument(
+    "--onnx_model_path",
+    default=None,
+    type=str,
+    help='Path to your onnx model.'
+)
 args = parser.parse_args()
 
 # below are free hyper-params
@@ -54,6 +66,13 @@ eval_every = args.eval_every
 cat_or_add = args.cat_or_add
 parallel = args.parallel
 inference_framework = args.inference_framework
+onnx_model_path = args.onnx_model_path
+
+if inference_framework not in ['pt', 'ort']:
+    raise ValueError(f'inference_framework only supports "pt", "ort", got `{inference_framework}` instead.')
+if inference_framework == 'ort':
+    assert onnx_model_path is not None, 'Path to onnx model is required, got None instead.'
+    assert os.path.exists(onnx_model_path), f'In valid onnx model path `{onnx_model_path}`'
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -121,7 +140,8 @@ class LMForwardAPI:
             model_name,
             config=self.config,
             n_prompt_tokens=n_prompt_tokens,
-            inference_framework=inference_framework
+            inference_framework=inference_framework,
+            onnx_model_path=onnx_model_path,
         )
         self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         if cat_or_add == 'cat':

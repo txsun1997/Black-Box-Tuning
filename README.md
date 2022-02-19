@@ -50,7 +50,7 @@ python bbt.py \
   --eval_every 100
 ```
 
-In addition, black-box tuning also supports parallel evaluation. That is, you can evaluation a population of solutions in parallel by putting them into a single large batch. For example,
+In addition, black-box tuning also supports parallel evaluation. That is, you can evaluate a population of solutions in parallel by putting them into a single large batch. For example,
 
 ```bash
 python bbt.py \
@@ -67,6 +67,40 @@ python bbt.py \
   --eval_every 20 \
   --parallel
 ```
+## Inference Optimization
+You can accelerate inference with Microsoft Onnxruntime. 
+We provided an end-to-end inference optimization solution. 
+Only one line of code is needed for ~2x inference speed.
+
+To export a bbt model based on PyTorch to an Onnx model, 
+you can run `export_and_optimize.py` with all parameters set to default to get a demo onnx model.
+```bash
+python export_and_optimize.py
+```
+Two models will be saved to `./onnx_models/`, namely exported (not accelerated) and optimized model.
+Then you can modify `run.sh`. 
+By setting parameter `inference_framework` to `'ort'` and `onnx_model_path` to `<Your model path>`,
+a faster (but a little less accurate) version of BBT is ready.
+
+To add some flexibility to model optimization, we provided some options in `export_and_optimize.py`.
+You can adjust these parameters in `export_and_optimize.sh`. Here is an example.
+```bash
+python export_and_optimize.py \
+  --batch_size 32 \
+  --max_seq_len 128 \
+  --n_prompt_tokens 50 \
+  --prompt_embed_dim 1024 \
+  --exported_model_name 'model' \
+  --optimized_model_name 'optimized_model'
+```
+You can get the following results in ~4.4 ± 0.1 minutes, 
+compared to pytorch version of bbt whose performance time is ~8.8 ± 0.1 minutes (depends on hardware settings)
+
+| SST-2 split | Best Accuracy  |
+| ----------- | -------------- |
+| Train       | 100 (no drop)  |
+| Dev         | 96.88 (no drop)|
+| Test        | 86.7 (-1.6%)   |
 
 ## Cite
 

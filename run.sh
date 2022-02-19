@@ -10,4 +10,3 @@ python bbt.py \
   --budget 5000 \
   --print_every 50 \
   --eval_every 100 \
-  --inference_framework "ort"
