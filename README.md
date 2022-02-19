@@ -29,9 +29,9 @@ Results will be saved in a directory named `results/`. In general, you will obta
 
 | SST-2 split | Best Accuracy |
 | ----------- | ------------- |
-| Train       | 100           |
-| Dev         | 96.88         |
-| Test        | 88.3         |
+| Train       | 100 %         |
+| Dev         | 96.88 %       |
+| Test        | 88.3 %        |
 
 To reproduce other experiments in our paper, change the arguments of `bbt.py`, for example, 
 
@@ -96,11 +96,11 @@ python export_and_optimize.py \
 You can get the following results in 4.4 ± 0.1 minutes, 
 compared to pytorch version of bbt whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
 
-| SST-2 split | Best Accuracy  |
-| ----------- | -------------- |
-| Train       | 100 (no drop)  |
-| Dev         | 96.88 (no drop)|
-| Test        | 86.7 (-1.6%)   |
+| SST-2 split | Best Accuracy   |
+| ----------- | --------------- |
+| Train       | 100 (no drop) % |
+| Dev         | 96.88 (no drop)%|
+| Test        | 86.7 (-1.6) %   |
 
 ## Cite
 
