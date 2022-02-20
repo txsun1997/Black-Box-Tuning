@@ -72,6 +72,10 @@ You can accelerate inference with Microsoft Onnxruntime.
 We provided an end-to-end inference optimization solution. 
 Only one line of code is needed for ~2x inference speed.
 
+SDK `onnxruntime-gpu` is required for optimization. Installation of this package can be troublesome.
+And there may be some environment-specific errors or unexpected performance.
+But in real-world scenarios, this is a part of the black box on server side.
+
 To export a BBT model based on PyTorch to an Onnx model, 
 you can run `export_and_optimize.py` with all arguments set to default to get a demo onnx model.
 ```bash
@@ -95,7 +99,7 @@ python bbt.py \
   --print_every 50 \
   --eval_every 100 \
   --inference_framework 'ort' \
-  --onnx_model_path './onnx_model/optimized_model.onnx'
+  --onnx_model_path './onnx_models/optimized_model.onnx'
 ```
 
 To add some flexibility to model optimization, we provided some options in `export_and_optimize.py`.
