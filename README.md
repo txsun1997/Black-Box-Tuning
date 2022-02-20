@@ -72,7 +72,7 @@ You can accelerate inference with Microsoft Onnxruntime.
 We provided an end-to-end inference optimization solution. 
 Only one line of code is needed for ~2x inference speed.
 
-To export a bbt model based on PyTorch to an Onnx model, 
+To export a BBT model based on PyTorch to an Onnx model, 
 you can run `export_and_optimize.py` with all arguments set to default to get a demo onnx model.
 ```bash
 python export_and_optimize.py
@@ -80,7 +80,23 @@ python export_and_optimize.py
 Two models will be saved to `./onnx_models/`, namely exported (not accelerated) and optimized model.
 Then you can modify `run.sh`. 
 By setting parameter `inference_framework` to `'ort'` and `onnx_model_path` to `<Your model path>`,
-a faster (but a little less accurate) version of BBT is ready.
+a faster (but a little less accurate) version of BBT is ready. Here is an example.
+```bash
+python bbt.py \
+  --task_name "sst2" \
+  --n_prompt_tokens 50 \
+  --intrinsic_dim 500 \
+  --k_shot 16 \
+  --device "cuda:0" \
+  --seed 42 \
+  --loss_type "hinge" \
+  --cat_or_add "add" \
+  --budget 5000 \
+  --print_every 50 \
+  --eval_every 100 \
+  --inference_framework 'ort' \
+  --onnx_model_path './onnx_model/optimized_model.onnx'
+```
 
 To add some flexibility to model optimization, we provided some options in `export_and_optimize.py`.
 You can adjust these arguments in `export_and_optimize.sh`. Here is an example.
