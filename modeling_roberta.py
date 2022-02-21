@@ -636,20 +636,20 @@ class RobertaModel(RobertaPreTrainedModel):
     )
     # Copied from transformers.models.bert.modeling_bert.BertModel.forward
     def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            prompt_embedding=None,
-            token_type_ids=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
-            concat_prompt=False,
+        self,
+        input_ids=None,
+        attention_mask=None,
+        prompt_embedding=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        concat_prompt=False,
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
@@ -877,10 +877,14 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
                 "bi-directional self-attention."
             )
 
-        self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.lm_head = RobertaLMHead(config)
-
+        self.roberta = RobertaModel(config, add_pooling_layer=False)
         self.init_weights()
+        # if inference_framework == 'ort':
+        #     del self.roberta
+
+        # elif inference_framework == 'ort':
+        #     self._init_weight(self.lm_head)
 
         self.n_prompt_tokens = n_prompt_tokens
         self.prompt_embedding = None

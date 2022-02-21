@@ -30,7 +30,7 @@ def export_onnx_model():
                 'input_ids': {0: 'batch_size', 1: 'max_seq_len'},
                 'attention_mask': {0: 'batch_size', 1: 'max_seq_len'},
                 'prompt_embedding': {0: 'batch_size'},
-                'logits': {0: 'batch_size', 1: 'max_seq_len'}
+                'logits': {0: 'batch_size'}
             },
             do_constant_folding=True,
             use_external_data_format=False,
@@ -78,6 +78,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('--n_prompt_tokens', default=50, type=int, help='Number of prompt tokens during inference.')
     parser.add_argument('--prompt_embed_dim', default=1024, type=int, help='Prompt embedding dimension.')
+    parser.add_argument("--cat_or_add", default='add', type=str)
     parser.add_argument(
         '--exported_model_name',
         default='model',
@@ -100,13 +101,16 @@ if __name__ == '__main__':
     max_seq_len = args.max_seq_len
     n_prompt_tokens = args.n_prompt_tokens
     prompt_embed_dim = args.prompt_embed_dim
+    if args.cat_or_add not in ['add', 'cat']:
+        raise ValueError(f'Argument `cat_or_add` only supports `cat` and `add`, got `{args.cat_or_add}` instead.')
 
     config = RobertaConfig.from_pretrained(model_name)
     tokenizer = RobertaTokenizer.from_pretrained(model_name)
     model = RobertaModel.from_pretrained(model_name).eval().cuda()
-    input_ids = torch.randint(low=1, high=10000, size=(bsz, max_seq_len)).type(torch.int64).cuda()
-    attention_mask = torch.ones(bsz, max_seq_len).type(torch.int64).cuda()
-    prompt_embedding = torch.randn(size=(bsz, n_prompt_tokens, prompt_embed_dim)).cuda()
+    model.concat_prompt = False if args.cat_or_add == 'add' else True
+    input_ids = torch.randint(low=1, high=10000, size=(bsz, max_seq_len), dtype=torch.int64, device='cuda')
+    attention_mask = torch.ones((bsz, max_seq_len), dtype=torch.int64, device='cuda')
+    prompt_embedding = torch.randn(size=(bsz, n_prompt_tokens, prompt_embed_dim), dtype=torch.float32, device='cuda')
     exported_model_path = os.path.join('onnx_models', args.exported_model_name + '.onnx')
     optimized_model_path = os.path.join('onnx_models', args.optimized_model_name + '.onnx')
     export_and_optimize_onnxruntime_model()

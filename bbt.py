@@ -143,6 +143,8 @@ class LMForwardAPI:
             inference_framework=inference_framework,
             onnx_model_path=onnx_model_path,
         )
+        if inference_framework == 'ort':
+            self.model.roberta = None
         self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         if cat_or_add == 'cat':
             self.model.set_concat_prompt(True)
@@ -251,7 +253,7 @@ class LMForwardAPI:
                 if self.init_prompt is not None:
                     z = z + self.init_prompt  # Az + p_0
                 pe_list.append(z.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1))
-            prompt_embedding = torch.cat(pe_list, dim=0)  # num_workers*bsz x prompt_len x dim
+            prompt_embedding = torch.cat(pe_list)  # num_workers*bsz x prompt_len x dim
             assert len(prompt_embedding) == len(train_data['input_ids'])
         elif isinstance(prompt_embedding, np.ndarray):  # single query or None
             prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
@@ -260,14 +262,16 @@ class LMForwardAPI:
                 prompt_embedding = prompt_embedding + self.init_prompt  # Az + p_0
             prompt_embedding = prompt_embedding.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1)
         else:
-            raise ValueError(f'[Prompt Embedding] Only support [list, numpy.ndarray], got `{type(prompt_embedding)}` instead.')
+            raise ValueError(
+                f'[Prompt Embedding] Only support [list, numpy.ndarray], got `{type(prompt_embedding)}` instead.'
+            )
         self.model.set_prompt_embedding(prompt_embedding)
 
         if isinstance(test_data, DataSet):
             if prompt_embedding.shape[0] > bsz:
                 raise ValueError('Provide a single prompt embedding for testing.')
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
-                                 num_workers=4, device=device, verbose=1, use_tqdm=True)
+                                 num_workers=4, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
             # fitlog.add_best_metric(test_acc, name='test_acc')
