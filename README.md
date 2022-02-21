@@ -29,9 +29,9 @@ Results will be saved in a directory named `results/`. In general, you will obta
 
 | SST-2 split | Best Accuracy |
 | ----------- | ------------- |
-| Train       | 100           |
-| Dev         | 96.88         |
-| Test        | 88.3         |
+| Train       | 100 %         |
+| Dev         | 96.88 %       |
+| Test        | 88.3 %        |
 
 To reproduce other experiments in our paper, change the arguments of `bbt.py`, for example, 
 
@@ -50,7 +50,7 @@ python bbt.py \
   --eval_every 100
 ```
 
-In addition, black-box tuning also supports parallel evaluation. That is, you can evaluation a population of solutions in parallel by putting them into a single large batch. For example,
+In addition, black-box tuning also supports parallel evaluation. That is, you can evaluate a population of solutions in parallel by putting them into a single large batch. For example,
 
 ```bash
 python bbt.py \
@@ -67,6 +67,60 @@ python bbt.py \
   --eval_every 20 \
   --parallel
 ```
+## Inference Optimization
+You can accelerate inference with Microsoft Onnxruntime. 
+We provided an end-to-end inference optimization solution. 
+Only one line of code is needed for ~2x inference speed.
+
+SDK `onnxruntime-gpu` is required for optimization. Installation of this package can be troublesome.
+And there may be some environment-specific errors or unexpected performance.
+But in real-world scenarios, this is a part of the black box on server side.
+
+To export a BBT model based on PyTorch to an Onnx model, 
+you can run `export_and_optimize.py` with all arguments set to default to get a demo onnx model.
+```bash
+python export_and_optimize.py
+```
+Two models will be saved to `./onnx_models/`, namely exported (not accelerated) and optimized model.
+Then you can modify `run.sh`. 
+By setting parameter `inference_framework` to `'ort'` and `onnx_model_path` to `<Your model path>`,
+a faster (but a little less accurate) version of BBT is ready. Here is an example.
+```bash
+python bbt.py \
+  --task_name "sst2" \
+  --n_prompt_tokens 50 \
+  --intrinsic_dim 500 \
+  --k_shot 16 \
+  --device "cuda:0" \
+  --seed 42 \
+  --loss_type "hinge" \
+  --cat_or_add "add" \
+  --budget 5000 \
+  --print_every 50 \
+  --eval_every 100 \
+  --inference_framework 'ort' \
+  --onnx_model_path './onnx_models/optimized_model.onnx'
+```
+
+To add some flexibility to model optimization, we provided some options in `export_and_optimize.py`.
+You can adjust these arguments in `export_and_optimize.sh`. Here is an example.
+```bash
+python export_and_optimize.py \
+  --batch_size 32 \
+  --max_seq_len 128 \
+  --n_prompt_tokens 50 \
+  --prompt_embed_dim 1024 \
+  --exported_model_name 'model' \
+  --optimized_model_name 'optimized_model'
+```
+You can get the following results in 4.4 ± 0.1 minutes, 
+compared to pytorch version of BBT whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
+
+| SST-2 split | Best Accuracy   |
+| ----------- | --------------- |
+| Train       | 100 (no drop) % |
+| Dev         | 96.88 (no drop)%|
+| Test        | 86.7 (-1.6) %   |
 
 ## Cite
 

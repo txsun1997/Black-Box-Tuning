@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch RoBERTa model. """
-
 import math
 
 import torch
@@ -46,6 +45,12 @@ from transformers.modeling_utils import (
 )
 from transformers.utils import logging
 from transformers.models.roberta.configuration_roberta import RobertaConfig
+# ort
+try:
+    import onnxruntime as ort
+    import numpy as np
+except ImportError:
+    pass
 
 logger = logging.get_logger(__name__)
 
@@ -368,7 +373,6 @@ class RobertaLayer(nn.Module):
         )
         attention_output = self_attention_outputs[0]
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
-
         if self.is_decoder and encoder_hidden_states is not None:
             assert hasattr(
                 self, "crossattention"
@@ -383,7 +387,6 @@ class RobertaLayer(nn.Module):
             )
             attention_output = cross_attention_outputs[0]
             outputs = outputs + cross_attention_outputs[1:]  # add cross attentions if we output attention weights
-
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
         )
@@ -422,9 +425,7 @@ class RobertaEncoder(nn.Module):
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
             layer_head_mask = head_mask[i] if head_mask is not None else None
-
             if getattr(self.config, "gradient_checkpointing", False):
-
                 def create_custom_forward(module):
                     def custom_forward(*inputs):
                         return module(*inputs, output_attentions)
@@ -453,7 +454,6 @@ class RobertaEncoder(nn.Module):
                 all_self_attentions = all_self_attentions + (layer_outputs[1],)
                 if self.config.add_cross_attention:
                     all_cross_attentions = all_cross_attentions + (layer_outputs[2],)
-
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -639,6 +639,7 @@ class RobertaModel(RobertaPreTrainedModel):
             self,
             input_ids=None,
             attention_mask=None,
+            prompt_embedding=None,
             token_type_ids=None,
             position_ids=None,
             head_mask=None,
@@ -648,7 +649,6 @@ class RobertaModel(RobertaPreTrainedModel):
             output_attentions=None,
             output_hidden_states=None,
             return_dict=None,
-            prompt_embedding=None,
             concat_prompt=False,
     ):
         r"""
@@ -665,7 +665,6 @@ class RobertaModel(RobertaPreTrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif input_ids is not None:
@@ -676,7 +675,6 @@ class RobertaModel(RobertaPreTrainedModel):
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         device = input_ids.device if input_ids is not None else inputs_embeds.device
-
         if attention_mask is None:
             attention_mask = torch.ones(input_shape, device=device)
         if token_type_ids is None:
@@ -690,7 +688,6 @@ class RobertaModel(RobertaPreTrainedModel):
             attention_mask = torch.cat([attention_mask_padding, attention_mask], 1).to(input_ids.device)
             input_shape = attention_mask.shape
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(attention_mask, input_shape, device)
-
         # If a 2D or 3D attention mask is provided for the cross-attention
         # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
         if self.config.is_decoder and encoder_hidden_states is not None:
@@ -701,7 +698,6 @@ class RobertaModel(RobertaPreTrainedModel):
             encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
         else:
             encoder_extended_attention_mask = None
-
         # Prepare head mask if needed
         # 1.0 in head_mask indicate we keep the head
         # attention_probs has shape bsz x n_heads x N x N
@@ -714,15 +710,16 @@ class RobertaModel(RobertaPreTrainedModel):
         )
         # extend inputs_embeds
         if prompt_embedding is not None:
-            if concat_prompt: # concat prompt embedding with embedding_output
+            if concat_prompt:  # concat prompt embedding with embedding_output
                 # prompt_embedding = prompt_embedding.repeat(input_shape[0], 1, 1).to(embedding_output.device)
                 embedding_output = torch.cat([prompt_embedding, embedding_output], dim=1)
             else:
                 bsz, n_prompt_tokens, prompt_dim = prompt_embedding.shape
-                prompt_padding = torch.zeros(bsz, input_shape[1] - n_prompt_tokens - 1, prompt_dim).to(embedding_output.device)
+                prompt_padding = torch.zeros(bsz, input_shape[1] - n_prompt_tokens - 1, prompt_dim).to(
+                    embedding_output.device)
                 extended_prompt_embedding = torch.cat([prompt_embedding, prompt_padding], dim=1)
                 pre_padding = torch.zeros(bsz, 1, prompt_dim).to(embedding_output.device)
-                extended_prompt_embedding = torch.cat([pre_padding, extended_prompt_embedding], dim=1) # for <CLS>
+                extended_prompt_embedding = torch.cat([pre_padding, extended_prompt_embedding], dim=1)  # for <CLS>
                 # extended_prompt_embedding = extended_prompt_embedding.repeat(input_shape[0], 1, 1)
                 embedding_output = embedding_output + extended_prompt_embedding
         encoder_outputs = self.encoder(
@@ -740,14 +737,7 @@ class RobertaModel(RobertaPreTrainedModel):
 
         if not return_dict:
             return (sequence_output, pooled_output) + encoder_outputs[1:]
-
-        return BaseModelOutputWithPoolingAndCrossAttentions(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-            cross_attentions=encoder_outputs.cross_attentions,
-        )
+        return sequence_output
 
 
 @add_start_docstrings(
@@ -878,7 +868,7 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 
-    def __init__(self, config, n_prompt_tokens):
+    def __init__(self, config, n_prompt_tokens, inference_framework='pt', onnx_model_path=None):
         super().__init__(config)
 
         if config.is_decoder:
@@ -895,6 +885,16 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
         self.n_prompt_tokens = n_prompt_tokens
         self.prompt_embedding = None
         self.concat_prompt = False
+
+        self.inference_framework = inference_framework
+
+        if inference_framework == 'ort':
+            ort_option = ort.SessionOptions()
+            self.ort_session = ort.InferenceSession(
+                onnx_model_path,
+                ort_option,
+                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            )
 
     def set_prompt_embedding(self, prompt_embedding):
         self.prompt_embedding = prompt_embedding
@@ -942,7 +942,6 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
             Used to hide legacy arguments that have been deprecated.
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
         if prompt_embedding is None:
             prompt_embedding = self.prompt_embedding
 
@@ -951,42 +950,57 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
             prompt_dim = prompt_embedding.shape[-1]
             prompt_embedding = prompt_embedding.reshape(-1, self.n_prompt_tokens, prompt_dim)[:bsz].to(input_ids.device)
             if self.concat_prompt:
-                mask_pos = mask_pos + self.n_prompt_tokens
+                mask_pos += self.n_prompt_tokens
 
-        outputs = self.roberta(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            prompt_embedding=prompt_embedding,
-            concat_prompt=self.concat_prompt,
-        )
-        sequence_output = outputs[0]
-        sequence_mask_output = sequence_output[torch.arange(sequence_output.size(0)), mask_pos]
-        prediction_scores = self.lm_head(sequence_mask_output)
+        if self.inference_framework == 'pt':
+            outputs = self.roberta(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                prompt_embedding=prompt_embedding,
+                concat_prompt=self.concat_prompt,
+            )
 
-        masked_lm_loss = None
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+        elif self.inference_framework == 'ort':
+            bsz, max_seq_len = input_ids.shape
+            outputs = torch.empty((bsz, max_seq_len, self.config.hidden_size), dtype=torch.float32, device='cuda')
+            io_binding = self.ort_session.io_binding()
+            io_binding.bind_input(name='input_ids', device_type='cuda', device_id=0, element_type=np.longlong,
+                                  shape=(bsz, max_seq_len), buffer_ptr=input_ids.data_ptr())
+            io_binding.bind_input(name='attention_mask', device_type='cuda', device_id=0, element_type=np.longlong,
+                                  shape=attention_mask.shape, buffer_ptr=attention_mask.data_ptr())
+            io_binding.bind_input(name='prompt_embedding', device_type='cuda', device_id=0, element_type=np.float32,
+                                  shape=prompt_embedding.shape, buffer_ptr=prompt_embedding.data_ptr())
+            io_binding.bind_output('logits', device_type='cuda', device_id=0, element_type=np.float32,
+                                   shape=outputs.shape, buffer_ptr=outputs.data_ptr())
+            self.ort_session.run_with_iobinding(io_binding)
 
-        if not return_dict:
-            output = (prediction_scores,) + outputs[2:]
-            return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
-
-        return MaskedLMOutput(
-            loss=masked_lm_loss,
-            logits=prediction_scores,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
+        return {
+            'logits': self.lm_head(outputs[torch.arange(outputs.size(0)), mask_pos]),
+        }
+        # masked_lm_loss = None
+        # if labels is not None:
+        #     loss_fct = CrossEntropyLoss()
+        #     masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+        #
+        # if not return_dict:
+        #     output = (prediction_scores,) + outputs[2:]
+        #     return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
+        #
+        # return MaskedLMOutput(
+        #     loss=masked_lm_loss,
+        #     logits=prediction_scores,
+        #     hidden_states=outputs.hidden_states,
+        #     attentions=outputs.attentions,
+        # )
 
 
 class RobertaForPromptTuning(RobertaPreTrainedModel):
