@@ -110,11 +110,16 @@ python export_and_optimize.py \
   --max_seq_len 128 \
   --n_prompt_tokens 50 \
   --prompt_embed_dim 1024 \
+  --cat_or_add "add" \
   --exported_model_name 'model' \
   --optimized_model_name 'optimized_model'
 ```
-You can get the following results in 4.4 ± 0.1 minutes, 
-compared to pytorch version of BBT whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
+Onnx models are static, but to cat or to add is a branch in the model.
+During building phase, unused nodes in the model graph are removed for better performance.
+So you have to build one for each mode.
+
+You can get the following results in 4.3 ± 0.1 minutes, 
+compared to pytorch version of BBT whose training time is 8.9 ± 0.15 minutes (depends on hardware settings)
 
 | SST-2 split | Best Accuracy   |
 | ----------- | --------------- |
