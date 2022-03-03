@@ -84,7 +84,7 @@ python export_and_optimize.py
 Two models will be saved to `./onnx_models/`, namely exported (not accelerated) and optimized model.
 Then you can modify `run.sh`. 
 By setting parameter `inference_framework` to `'ort'` and `onnx_model_path` to `<Your model path>`,
-a faster (but a little less accurate) version of BBT is ready. Here is an example.
+a faster version of BBT is ready. Here is an example.
 ```bash
 python bbt.py \
   --task_name "sst2" \
@@ -110,17 +110,23 @@ python export_and_optimize.py \
   --max_seq_len 128 \
   --n_prompt_tokens 50 \
   --prompt_embed_dim 1024 \
+  --cat_or_add "add" \
   --exported_model_name 'model' \
   --optimized_model_name 'optimized_model'
 ```
-You can get the following results in 4.4 ± 0.1 minutes, 
-compared to pytorch version of BBT whose training time is 8.8 ± 0.15 minutes (depends on hardware settings)
+Onnx models are static, but to cat or to add is a branch in the model.
+During building phase, unused nodes in the model graph are removed for better performance.
+So you have to build one for each mode.
+
+You can get the following results in 4.3 ± 0.1 minutes, 
+compared to pytorch version of BBT whose training time is 8.9 ± 0.15 minutes (depends on hardware settings)
+
+You can get the following results by running BBT 100 times on sst2 with random seed set from 1 to 100.
+Fp16 optimization does not hurt performance on all tasks.
 
 | SST-2 split | Best Accuracy   |
 | ----------- | --------------- |
-| Train       | 100 (no drop) % |
-| Dev         | 96.88 (no drop)%|
-| Test        | 86.7 (-1.6) %   |
+| Test        | 88.0 (little fluctuation) %   |
 
 ## Cite
 

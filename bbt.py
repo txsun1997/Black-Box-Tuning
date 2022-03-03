@@ -143,6 +143,8 @@ class LMForwardAPI:
             inference_framework=inference_framework,
             onnx_model_path=onnx_model_path,
         )
+        if inference_framework == 'ort':
+            self.model.roberta = None
         self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         if cat_or_add == 'cat':
             self.model.set_concat_prompt(True)
@@ -163,7 +165,7 @@ class LMForwardAPI:
             for p in self.linear.parameters():
                 torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
         self.best_train_perf = 0.0
-        self.best_dev_perf = 0.0
+        self.best_dev_loss = float('inf')
         self.best_prompt = None
         self.num_call = 0
         self.save_path = save_path
@@ -251,7 +253,7 @@ class LMForwardAPI:
                 if self.init_prompt is not None:
                     z = z + self.init_prompt  # Az + p_0
                 pe_list.append(z.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1))
-            prompt_embedding = torch.cat(pe_list, dim=0)  # num_workers*bsz x prompt_len x dim
+            prompt_embedding = torch.cat(pe_list)  # num_workers*bsz x prompt_len x dim
             assert len(prompt_embedding) == len(train_data['input_ids'])
         elif isinstance(prompt_embedding, np.ndarray):  # single query or None
             prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
@@ -260,14 +262,16 @@ class LMForwardAPI:
                 prompt_embedding = prompt_embedding + self.init_prompt  # Az + p_0
             prompt_embedding = prompt_embedding.reshape(n_prompt_tokens, -1).repeat(bsz, 1, 1)
         else:
-            raise ValueError(f'[Prompt Embedding] Only support [list, numpy.ndarray], got `{type(prompt_embedding)}` instead.')
+            raise ValueError(
+                f'[Prompt Embedding] Only support [list, numpy.ndarray], got `{type(prompt_embedding)}` instead.'
+            )
         self.model.set_prompt_embedding(prompt_embedding)
 
         if isinstance(test_data, DataSet):
             if prompt_embedding.shape[0] > bsz:
                 raise ValueError('Provide a single prompt embedding for testing.')
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
-                                 num_workers=4, device=device, verbose=1, use_tqdm=True)
+                                 num_workers=4, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
             # fitlog.add_best_metric(test_acc, name='test_acc')
@@ -331,17 +335,17 @@ class LMForwardAPI:
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
-                if dev_perf >= self.best_dev_perf:
-                    self.best_dev_perf = dev_perf
+                if dev_loss <= self.best_dev_loss:
+                    self.best_dev_loss = dev_loss
                     # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best_prompt = copy.deepcopy(tmp_prompt)
                 if self.save_path is not None:
-                    with open(os.path.join(self.save_path, 'dev_acc.txt'), 'a') as fout:
-                        fout.write('{}\t{}\n'.format(self.num_call, dev_perf))
-                print('Dev loss: {}. Current dev perf: {}. Best dev perf: {}'.format(
+                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                        fout.write('{}\t{}\n'.format(self.num_call, dev_loss))
+                print('Dev loss: {}. Dev perf: {}. Best dev loss: {}'.format(
                     round(float(dev_loss), 4),
                     round(float(dev_perf), 4),
-                    round(float(self.best_dev_perf), 4)))
+                    round(float(self.best_dev_loss), 4)))
                 print('********* Done *********')
             if parallel:
                 return all_losses
@@ -350,7 +354,7 @@ class LMForwardAPI:
 
 
 tokenizer = RobertaTokenizer.from_pretrained(model_name)
-cache_fn = f"caches/data_{task_name}_{n_prompt_tokens}.pt"
+cache_fn = f"caches/data_{task_name}_{n_prompt_tokens}_{seed}.pt"
 DataLoader = {
     'sst2': SST2Loader,
     'agnews': AGNewsLoader,
