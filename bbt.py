@@ -61,8 +61,8 @@ seed = args.seed
 loss_type = args.loss_type
 print_every = args.print_every
 eval_every = args.eval_every
-# if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
-#     args.cat_or_add = 'cat'
+if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
+    args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
 parallel = args.parallel
 inference_framework = args.inference_framework
@@ -78,7 +78,7 @@ if inference_framework == 'ort':
 if cat_or_add == 'add':
     init_prompt_path = None
 else:
-    init_prompt_path = 'YOUR_PROMPT_PATH'
+    init_prompt_path = './nli_base_prompt.pt'
 
 model_name = 'roberta-large'
 # bound = math.sqrt(intrinsic_dim)
