@@ -954,7 +954,7 @@ class RobertaForMaskedLM(RobertaPreTrainedModel):
             prompt_dim = prompt_embedding.shape[-1]
             prompt_embedding = prompt_embedding.reshape(-1, self.n_prompt_tokens, prompt_dim)[:bsz].to(input_ids.device)
             if self.concat_prompt:
-                mask_pos += self.n_prompt_tokens
+                mask_pos = self.n_prompt_tokens + mask_pos
 
         if self.inference_framework == 'pt':
             outputs = self.roberta(
