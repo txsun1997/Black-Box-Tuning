@@ -372,7 +372,10 @@ def get_data(task_name, tokenizer):
         splits = ['train', 'test']
     else:  # for datasets without test set, we use dev set
         splits = ['train', 'validation']
-    data_bundle = DataLoader[task_name](tokenizer=tokenizer, n_prompt_tokens=n_prompt_tokens).my_load(splits)
+    if args.cat_or_add == 'cat':
+        data_bundle = DataLoader[task_name](tokenizer=tokenizer, n_prompt_tokens=0).my_load(splits)
+    else:
+        data_bundle = DataLoader[task_name](tokenizer=tokenizer, n_prompt_tokens=n_prompt_tokens).my_load(splits)
     return data_bundle
 
 
