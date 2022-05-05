@@ -425,14 +425,15 @@ class RobertaEncoder(nn.Module):
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
 
         bsz, _, prompt_dim = hidden_states.shape
+        device = hidden_states.device
         prefix = self.best_prefix
         if self.layer_id_to_replace != -1:  # train
             prefix[self.layer_id_to_replace] = self.prefix
-        prompt_padding = torch.zeros(bsz, hidden_states.size(1) - self.n_prompt_tokens - 1, prompt_dim, device='cuda:0')
-        pre_padding = torch.zeros(bsz, 1, prompt_dim, device='cuda:0')
+        prompt_padding = torch.zeros(bsz, hidden_states.size(1) - self.n_prompt_tokens - 1, prompt_dim, device=device)
+        pre_padding = torch.zeros(bsz, 1, prompt_dim, device=device)
 
         for i, layer_module in enumerate(self.layer):
-            hidden_states = hidden_states + torch.cat([pre_padding, prefix[i].cuda().reshape(self.n_prompt_tokens, -1).repeat(bsz, 1, 1), prompt_padding], dim=1)
+            hidden_states = hidden_states + torch.cat([pre_padding, prefix[i].to(device).reshape(self.n_prompt_tokens, -1).repeat(bsz, 1, 1), prompt_padding], dim=1)
 
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
