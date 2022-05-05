@@ -455,7 +455,6 @@ model_forward_api = LMForwardAPI(
     init_prompt_path=init_prompt_path
 )
 
-popsize = 4 + 3 * np.log(intrinsic_dim)
 cma_opts = {
     'seed': seed,
     'popsize': popsize,
