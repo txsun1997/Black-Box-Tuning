@@ -23,6 +23,7 @@ parser.add_argument("--intrinsic_dim", default=500, type=int)
 parser.add_argument("--k_shot", default=16, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
+parser.add_argument("--popsize", default=20, type=int)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
@@ -54,6 +55,10 @@ intrinsic_dim = args.intrinsic_dim
 k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
+if args.popsize > 0:
+    popsize = args.popsize
+else:
+    popsize = 4 + 3 * np.log(intrinsic_dim)
 device = args.device
 alg = args.alg
 random_proj = args.random_proj
@@ -61,8 +66,8 @@ seed = args.seed
 loss_type = args.loss_type
 print_every = args.print_every
 eval_every = args.eval_every
-if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
-    args.cat_or_add = 'cat'
+# if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
+#     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
 parallel = args.parallel
 inference_framework = args.inference_framework

@@ -4,13 +4,13 @@ import time
 import random
 
 import torch
-# import fitlog
+import fitlog
 import argparse
 import numpy as np
 import cma
 from fastNLP import cache_results, Tester, DataSet
 from transformers import RobertaConfig, RobertaTokenizer
-from prefix_modeling_roberta import RobertaForMaskedLM
+from deep_modeling_roberta import RobertaForMaskedLM
 from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
 from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 from utils import hinge_loss
@@ -23,6 +23,7 @@ parser.add_argument("--intrinsic_dim", default=500, type=int)
 parser.add_argument("--k_shot", default=16, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
+parser.add_argument("--popsize", default=20, type=int)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
@@ -40,6 +41,10 @@ intrinsic_dim = args.intrinsic_dim
 k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
+if args.popsize > 0:
+    popsize = args.popsize
+else:
+    popsize = 4 + 3 * np.log(intrinsic_dim)
 device = args.device
 alg = args.alg
 random_proj = args.random_proj
@@ -47,8 +52,8 @@ seed = args.seed
 loss_type = args.loss_type
 print_every = args.print_every
 eval_every = args.eval_every
-if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
-    args.cat_or_add = 'cat'
+# if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
+#     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
 
 # fixed hyper-params
@@ -73,7 +78,7 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}'.format(
+save_path = 'deep_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}'.format(
     task_name,
     n_prompt_tokens * 1024,
     intrinsic_dim,
@@ -95,11 +100,11 @@ if os.path.exists(save_path):
 args.save_path = save_path
 args.bound = bound
 
-# log_dir = './logs'
-# fitlog.set_log_dir(log_dir)
-# fitlog.commit(__file__, fit_msg=save_path)
-# fitlog.add_hyper(args)
-# fitlog.add_hyper_in_file(__file__)
+log_dir = './deeplogs'
+fitlog.set_log_dir(log_dir)
+fitlog.commit(__file__, fit_msg=save_path)
+fitlog.add_hyper(args)
+fitlog.add_hyper_in_file(__file__)
 
 
 random.seed(seed)
@@ -130,6 +135,7 @@ class LMForwardAPI:
             for p in self.linear.parameters():
                 torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
         self.best_train_perf = 0.0
+        self.best_dev_perf = 0.0
         self.best_dev_loss = float('inf')
         self.best_prompt = None
         self.num_call = 0
@@ -220,7 +226,7 @@ class LMForwardAPI:
                                  num_workers=4, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
-
+            fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
             self.model.roberta.encoder.layer_id_to_replace = layer_id
@@ -235,9 +241,12 @@ class LMForwardAPI:
                 )['logits']
 
             loss, perf = self.calc_metric(logits, train_data['labels'])
+            fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
             if perf > self.best_train_perf:
                 self.best_train_perf = perf
+                fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
             if self.save_path is not None:
                 with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
@@ -264,10 +273,12 @@ class LMForwardAPI:
                     )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
-
+                fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
+                if dev_perf > self.best_dev_perf:
+                    self.best_dev_perf = dev_perf
+                    fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                 if dev_loss <= self.best_dev_loss:
                     self.best_dev_loss = dev_loss
-
                     self.best_prompt = self.model.roberta.encoder.best_prefix
                 if self.save_path is not None:
                     with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
@@ -376,7 +387,6 @@ model_forward_api = LMForwardAPI(
     loss_type=loss_type,
 )
 
-popsize = 4 + 3 * np.log(intrinsic_dim)
 cma_opts = {
     'seed': seed,
     'popsize': popsize,
@@ -400,4 +410,4 @@ print(model_forward_api.model.roberta.encoder.best_prefix)
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
 print('Test acc: {}'.format(round(test_acc, 4)))
-# fitlog.finish()
+fitlog.finish()
