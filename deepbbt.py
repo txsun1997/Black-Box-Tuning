@@ -32,6 +32,19 @@ parser.add_argument("--random_proj", default='he', type=str)
 parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--loss_type", default='hinge', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
+parser.add_argument(
+    "--inference_framework",
+    default='pt',
+    type=str,
+    help='''Which inference framework to use. 
+         Currently supports `pt` and `ort`, standing for pytorch and Microsoft onnxruntime respectively'''
+)
+parser.add_argument(
+    "--onnx_model_path",
+    default=None,
+    type=str,
+    help='Path to your onnx model.'
+)
 args = parser.parse_args()
 
 # below are free hyper-params
@@ -55,6 +68,8 @@ eval_every = args.eval_every
 # if task_name in ['mrpc', 'snli', 'qnli', 'rte']:
 #     args.cat_or_add = 'cat'
 cat_or_add = args.cat_or_add
+inference_framework = args.inference_framework
+onnx_model_path = args.onnx_model_path
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -63,8 +78,7 @@ else:
     init_prompt_path = './nli_base_prompt.pt'
 
 model_name = 'roberta-large'
-# bound = math.sqrt(intrinsic_dim)
-# bound = math.pow(intrinsic_dim, 0.75)
+
 bound = 5
 
 if task_name in ['sst2', 'yelpp', 'rte', 'mrpc']:
@@ -78,7 +92,7 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'deep_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}'.format(
+save_path = 'deep_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
     task_name,
     n_prompt_tokens * 1024,
     intrinsic_dim,
@@ -90,6 +104,7 @@ save_path = 'deep_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budge
     seed,
     cat_or_add,
     random_proj,
+    inference_framework
 )
 print('Results will be saved in {}'.format(save_path))
 
@@ -100,11 +115,11 @@ if os.path.exists(save_path):
 args.save_path = save_path
 args.bound = bound
 
-log_dir = './deeplogs'
-fitlog.set_log_dir(log_dir)
-fitlog.commit(__file__, fit_msg=save_path)
-fitlog.add_hyper(args)
-fitlog.add_hyper_in_file(__file__)
+# log_dir = './deeplogs'
+# fitlog.set_log_dir(log_dir)
+# fitlog.commit(__file__, fit_msg=save_path)
+# fitlog.add_hyper(args)
+# fitlog.add_hyper_in_file(__file__)
 
 
 random.seed(seed)
@@ -120,12 +135,13 @@ class LMForwardAPI:
         self.model = RobertaForMaskedLM.from_pretrained(
             model_name,
             config=self.config,
+            n_prompt_tokens=n_prompt_tokens,
+            inference_framework=inference_framework,
+            onnx_model_path=onnx_model_path,
         )
-        self.model.roberta.encoder.best_prefix = [
-            torch.zeros(n_prompt_tokens, self.config.hidden_size, device='cuda:0')
-            for _ in range(self.config.num_hidden_layers)
-        ]
-        self.model.roberta.encoder.n_prompt_tokens = n_prompt_tokens
+        if inference_framework == 'ort':
+            self.model.roberta = None
+        self.best_prefix = torch.zeros(self.config.num_hidden_layers, n_prompt_tokens, self.config.hidden_size, device=device)
         self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         self.init_prompt = None
         self.model.to(device)
@@ -137,7 +153,6 @@ class LMForwardAPI:
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.best_dev_loss = float('inf')
-        self.best_prompt = None
         self.num_call = 0
         self.save_path = save_path
         self.print_every = print_every
@@ -210,27 +225,23 @@ class LMForwardAPI:
 
     def eval(self, prompt_embedding=None, layer_id=None, test_data=None):
         self.num_call += 1
-        if prompt_embedding is None:
-            self.model.roberta.encoder.best_prefix = self.best_prompt
-        else:
+        best_prefix = self.best_prefix
+        if prompt_embedding is not None:
             prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
-            prompt_embedding = self.linear[layer_id](prompt_embedding)  # Az
+            prompt_embedding = self.linear[layer_id](prompt_embedding).reshape(-1, self.config.hidden_size)  # Az
+            best_prefix[layer_id] = prompt_embedding
 
-        if self.init_prompt is not None:
-            prompt_embedding = prompt_embedding + self.init_prompt  # Az + p_0
-
+        self.model.set_prompt_embedding(best_prefix)
 
         if isinstance(test_data, DataSet):
-            self.model.roberta.encoder.layer_id_to_replace = -1
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
                                  num_workers=4, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
-            fitlog.add_best_metric(test_acc, name='test_acc')
+            # fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
-            self.model.roberta.encoder.layer_id_to_replace = layer_id
-            self.model.roberta.encoder.prefix = prompt_embedding
+
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
@@ -241,12 +252,12 @@ class LMForwardAPI:
                 )['logits']
 
             loss, perf = self.calc_metric(logits, train_data['labels'])
-            fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
-            fitlog.add_metric(perf, name='train_acc', step=self.num_call)
+            # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
             if perf > self.best_train_perf:
                 self.best_train_perf = perf
-                fitlog.add_best_metric(self.best_train_perf, name='train_acc')
+                # fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
             if self.save_path is not None:
                 with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
@@ -261,7 +272,6 @@ class LMForwardAPI:
                         round(float(self.best_train_perf), 4)))
 
             if self.num_call % self.eval_every == 0:
-                self.model.roberta.encoder.layer_id_to_replace = -1
                 print('********* Evaluated on dev set *********')
                 for k, v in dev_data.items():
                     dev_data[k] = v.to(device)
@@ -273,13 +283,13 @@ class LMForwardAPI:
                     )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
-                fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
+                # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
                 if dev_perf > self.best_dev_perf:
                     self.best_dev_perf = dev_perf
-                    fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
+                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                 if dev_loss <= self.best_dev_loss:
                     self.best_dev_loss = dev_loss
-                    self.best_prompt = self.model.roberta.encoder.best_prefix
+                    self.best_prefix = best_prefix
                 if self.save_path is not None:
                     with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
                         fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
@@ -398,16 +408,19 @@ es_list = [
     cma.CMAEvolutionStrategy(intrinsic_dim * [0], 0.5, inopts=cma_opts)
     for _ in range(model_forward_api.config.num_hidden_layers)
 ]
+start_time = time.time()
 
 for _ in range(budget // (int(popsize) * model_forward_api.config.num_hidden_layers)):
     for i, es in enumerate(es_list):
         solutions = es.ask()
         fitnesses = [model_forward_api.eval(x, i) for x in solutions]
         es.tell(solutions, fitnesses)
-        model_forward_api.model.roberta.encoder.best_prefix[i] = model_forward_api.linear[i](torch.tensor(es.result.xbest).type(torch.float32))  # set best cv
+        model_forward_api.best_prefix[i] = model_forward_api.linear[i](torch.tensor(es.result.xbest).type(torch.float32)).reshape(-1, model_forward_api.config.hidden_size)  # set best cv
 
-print(model_forward_api.model.roberta.encoder.best_prefix)
+end_time = time.time()
+print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
+print(model_forward_api.best_prefix)
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
 print('Test acc: {}'.format(round(test_acc, 4)))
-fitlog.finish()
+# fitlog.finish()
