@@ -101,7 +101,7 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
+save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}_{}'.format(
     task_name,
     n_prompt_tokens * 1024,
     intrinsic_dim,
@@ -114,6 +114,7 @@ save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_
     cat_or_add,
     random_proj,
     'parallel' if parallel else 'serial',
+    inference_framework
 )
 print('Results will be saved in {}'.format(save_path))
 
