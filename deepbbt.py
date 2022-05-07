@@ -141,7 +141,8 @@ class LMForwardAPI:
         )
         if inference_framework == 'ort':
             self.model.roberta = None
-        self.best_prefix = torch.zeros(self.config.num_hidden_layers, n_prompt_tokens, self.config.hidden_size, device=device)
+        self.cv = torch.zeros(self.config.num_hidden_layers, n_prompt_tokens, self.config.hidden_size, device=device)
+        self.best_prefix = None
         self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         self.init_prompt = None
         self.model.to(device)
@@ -151,7 +152,6 @@ class LMForwardAPI:
             for p in self.linear.parameters():
                 torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
         self.best_train_perf = 0.0
-        self.best_dev_perf = 0.0
         self.best_dev_loss = float('inf')
         self.num_call = 0
         self.save_path = save_path
@@ -225,15 +225,14 @@ class LMForwardAPI:
 
     def eval(self, prompt_embedding=None, layer_id=None, test_data=None):
         self.num_call += 1
-        best_prefix = self.best_prefix
+        cv = self.cv
         if prompt_embedding is not None:
             prompt_embedding = torch.tensor(prompt_embedding).type(torch.float32)  # z
             prompt_embedding = self.linear[layer_id](prompt_embedding).reshape(-1, self.config.hidden_size)  # Az
-            best_prefix[layer_id] = prompt_embedding
-
-        self.model.set_prompt_embedding(best_prefix)
+            cv[layer_id] = prompt_embedding
 
         if isinstance(test_data, DataSet):
+            self.model.set_prompt_embedding(self.best_prefix)
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
                                  num_workers=4, device=device, use_tqdm=True)
             results = test_tester.test()
@@ -241,7 +240,7 @@ class LMForwardAPI:
             # fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
-
+            self.model.set_prompt_embedding(cv)
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
@@ -284,14 +283,13 @@ class LMForwardAPI:
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
-                if dev_perf > self.best_dev_perf:
-                    self.best_dev_perf = dev_perf
-                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
-                if dev_loss <= self.best_dev_loss:
+                if dev_loss < self.best_dev_loss:
                     self.best_dev_loss = dev_loss
-                    self.best_prefix = best_prefix
+                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
+
+                    self.best_prefix = cv.clone()
                 if self.save_path is not None:
-                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                    with open(os.path.join(self.save_path, 'dev_acc.txt'), 'a') as fout:
                         fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
                 print('Dev loss: {}. Dev perf: {}. Best dev loss: {}'.format(
                     round(float(dev_loss), 4),
@@ -415,12 +413,13 @@ for _ in range(budget // (int(popsize) * model_forward_api.config.num_hidden_lay
         solutions = es.ask()
         fitnesses = [model_forward_api.eval(x, i) for x in solutions]
         es.tell(solutions, fitnesses)
-        model_forward_api.best_prefix[i] = model_forward_api.linear[i](torch.tensor(es.result.xbest).type(torch.float32)).reshape(-1, model_forward_api.config.hidden_size)  # set best cv
+        model_forward_api.cv[i] = model_forward_api.linear[i](torch.tensor(es.result.xbest).type(torch.float32)).reshape(-1, model_forward_api.config.hidden_size)  # set best cv
 
 end_time = time.time()
 print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
-print(model_forward_api.best_prefix)
+# print(model_forward_api.cv)
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
-print('Test acc: {}'.format(round(test_acc, 4)))
+with open(os.path.join(args.save_path, 'test_acc.txt'), 'a+') as f:
+    print('Test acc: {}'.format(round(test_acc, 4)), file=f)
 # fitlog.finish()

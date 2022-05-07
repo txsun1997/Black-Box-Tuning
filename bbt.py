@@ -341,12 +341,12 @@ class LMForwardAPI:
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
-                if dev_loss <= self.best_dev_loss:
+                if dev_loss < self.best_dev_loss:
                     self.best_dev_loss = dev_loss
                     # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best_prompt = copy.deepcopy(tmp_prompt)
                 if self.save_path is not None:
-                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                    with open(os.path.join(self.save_path, 'dev_acc.txt'), 'a') as fout:
                         fout.write('{}\t{}\n'.format(self.num_call, dev_loss))
                 print('Dev loss: {}. Dev perf: {}. Best dev loss: {}'.format(
                     round(float(dev_loss), 4),
