@@ -171,7 +171,7 @@ class LMForwardAPI:
             for p in self.linear.parameters():
                 torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
         self.best_train_perf = 0.0
-        self.best_dev_loss = float('inf')
+        self.best_dev_perf = 0.0
         self.best_prompt = None
         self.num_call = 0
         self.save_path = save_path
@@ -341,17 +341,17 @@ class LMForwardAPI:
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
-                if dev_loss <= self.best_dev_loss:
-                    self.best_dev_loss = dev_loss
+                if dev_perf > self.best_dev_perf:
+                    self.best_dev_perf = dev_perf
                     # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best_prompt = copy.deepcopy(tmp_prompt)
                 if self.save_path is not None:
-                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                    with open(os.path.join(self.save_path, 'dev_acc.txt'), 'a') as fout:
                         fout.write('{}\t{}\n'.format(self.num_call, dev_loss))
-                print('Dev loss: {}. Dev perf: {}. Best dev loss: {}'.format(
+                print('Dev loss: {}. Dev perf: {}. Best dev perf: {}'.format(
                     round(float(dev_loss), 4),
                     round(float(dev_perf), 4),
-                    round(float(self.best_dev_loss), 4)))
+                    round(float(self.best_dev_perf), 4)))
                 print('********* Done *********')
             if parallel:
                 return all_losses
