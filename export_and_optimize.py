@@ -8,7 +8,7 @@ import transformers
 import argparse
 from transformers import RobertaConfig, RobertaTokenizer
 import onnxruntime as ort
-from onnxruntime.transformers import optimizer
+import optimizer
 from typing import Callable, Dict, List, OrderedDict, Tuple
 
 
@@ -32,8 +32,6 @@ def export_onnx_model():
                 'logits': {0: 'batch_size'}
             },
             do_constant_folding=True,
-            use_external_data_format=False,
-            enable_onnx_checker=True,
             opset_version=12,
         )
         onnx_model = onnx.load(exported_model_path)
