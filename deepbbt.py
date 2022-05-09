@@ -4,7 +4,7 @@ import time
 import random
 
 import torch
-# import fitlog
+import fitlog
 import argparse
 import numpy as np
 import cma
@@ -114,12 +114,13 @@ if os.path.exists(save_path):
 
 args.save_path = save_path
 args.bound = bound
+args.bbt_version = 'deepbbt'
 
-# log_dir = './deeplogs'
-# fitlog.set_log_dir(log_dir)
-# fitlog.commit(__file__, fit_msg=save_path)
-# fitlog.add_hyper(args)
-# fitlog.add_hyper_in_file(__file__)
+log_dir = './logs'
+fitlog.set_log_dir(log_dir)
+fitlog.commit(__file__, fit_msg=save_path)
+fitlog.add_hyper(args)
+fitlog.add_hyper_in_file(__file__)
 
 
 random.seed(seed)
@@ -239,7 +240,7 @@ class LMForwardAPI:
                                  num_workers=4, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
-            # fitlog.add_best_metric(test_acc, name='test_acc')
+            fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
 
@@ -253,12 +254,12 @@ class LMForwardAPI:
                 )['logits']
 
             loss, perf = self.calc_metric(logits, train_data['labels'])
-            # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
-            # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
+            fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
             if perf > self.best_train_perf:
                 self.best_train_perf = perf
-                # fitlog.add_best_metric(self.best_train_perf, name='train_acc')
+                fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
             if self.save_path is not None:
                 with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
@@ -284,10 +285,10 @@ class LMForwardAPI:
                     )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
-                # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
+                fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
                 if dev_perf > self.best_dev_perf:
                     self.best_dev_perf = dev_perf
-                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
+                    fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best = best_prefix.clone()
                 if self.save_path is not None:
                     with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
@@ -422,4 +423,4 @@ print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
 print('Test acc: {}'.format(round(test_acc, 4)))
-# fitlog.finish()
+fitlog.finish()
