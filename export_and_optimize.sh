@@ -4,6 +4,5 @@ python export_and_optimize.py \
   --n_prompt_tokens 50 \
   --prompt_embed_dim 1024 \
   --cat_or_add "add" \
-  --exported_model_name 'deep_model' \
-  --optimized_model_name 'deep_optimized_model' \
-  --deep
+  --exported_model_name 'test_model' \
+  --optimized_model_name 'test_optimized_model'
