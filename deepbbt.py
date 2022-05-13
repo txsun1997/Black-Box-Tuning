@@ -192,7 +192,7 @@ class LMForwardAPI:
         else:
             raise NotImplementedError
         self.margin = self.metric.margin
-        self.ce_loss = torch.nn.CrossEntropyLoss(reduce='sum')
+        self.ce_loss = torch.nn.CrossEntropyLoss(reduction='sum')
 
     def calc_metric(self, logits, target):
         label_map = self.metric.label_map
@@ -213,7 +213,7 @@ class LMForwardAPI:
             raise KeyError(f'[Metric] Only support [acc, f1], got {self.metric_key} instead.')
 
         if self.loss_type == 'hinge':
-            loss = hinge_loss(logits, converted_target, margin=self.margin, reduce='sum').item() / len(target)
+            loss = hinge_loss(logits, converted_target, margin=self.margin, reduction='sum').item() / len(target)
         elif self.loss_type == 'ce':
             loss = self.ce_loss(logits, converted_target).item() / len(target)
         elif self.loss_type == 'perf':

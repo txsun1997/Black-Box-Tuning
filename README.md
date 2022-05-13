@@ -76,6 +76,21 @@ SDK `onnxruntime-gpu` is required for optimization. Installation of this package
 And there may be some environment-specific errors or unexpected performance.
 But in real-world scenarios, this is a part of the black box on server side.
 
+On an NVIDIA GeForce RTX 3090 GPU with Driver Version: 470.82.00 and CUDA Version: 11.4,
+ the following code works fine to configure the environment.
+```bash
+pip install transformers==4.1.1
+pip install datasets
+pip install fastNLP
+pip install cma
+pip install sklearn
+pip3 install torch --extra-index-url https://download.pytorch.org/whl/cu113
+pip install onnx
+pip install onnxruntime-gpu==1.10.0
+pip install coloredlogs
+pip install sympy
+```
+
 To export a BBT model based on PyTorch to an Onnx model, 
 you can run `export_and_optimize.py` with all arguments set to default to get a demo onnx model.
 ```bash
@@ -126,7 +141,7 @@ Fp16 optimization does not hurt performance on all tasks.
 
 | SST-2 split | Best Accuracy   |
 | ----------- | --------------- |
-| Test        | 88.0 (little fluctuation) %   |
+| Test        | 88.0  %   |
 
 ## Cite
 
