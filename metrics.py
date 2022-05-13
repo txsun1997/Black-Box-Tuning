@@ -15,7 +15,7 @@ class SST2Metric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -44,7 +44,7 @@ class SST2Metric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
@@ -72,7 +72,7 @@ class YelpPMetric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -101,7 +101,7 @@ class YelpPMetric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
@@ -128,7 +128,7 @@ class AGNewsMetric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -159,7 +159,7 @@ class AGNewsMetric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
@@ -186,7 +186,7 @@ class DBPediaMetric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -227,7 +227,7 @@ class DBPediaMetric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
@@ -254,7 +254,7 @@ class MRPCMetric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -283,7 +283,7 @@ class MRPCMetric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
@@ -349,7 +349,7 @@ class RTEMetric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -378,7 +378,7 @@ class RTEMetric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
@@ -405,7 +405,7 @@ class SNLIMetric(MetricBase):
         self._target = []
         self.hinge = 0.0
         self.ce_loss = 0.0
-        self.ce_fct = nn.CrossEntropyLoss(reduce='sum')
+        self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
             tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
@@ -435,7 +435,7 @@ class SNLIMetric(MetricBase):
 
         interest_index = list(self.label_map.keys())
         pred = pred[:, interest_index]
-        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduce='sum').item()
+        self.hinge += hinge_loss(pred, hinge_target, self.margin, reduction='sum').item()
         pred = pred.argmax(dim=-1).detach().cpu().numpy().tolist()
         self._pred.extend(pred)
 
