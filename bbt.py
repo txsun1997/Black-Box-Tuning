@@ -1,6 +1,7 @@
 import os
 import copy
 import time
+import math
 import random
 
 import torch
@@ -9,14 +10,37 @@ import argparse
 import numpy as np
 import cma
 from fastNLP import cache_results, Tester, DataSet
-from transformers import RobertaConfig, RobertaTokenizer
-from modeling_roberta import RobertaForMaskedLM
-from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+from transformers import (
+    RobertaConfig,
+    RobertaTokenizer,
+    BertConfig,
+    BertTokenizer,
+    ElectraConfig,
+    ElectraTokenizer,
+    BartConfig,
+    BartTokenizer,
+    T5Config,
+    T5Tokenizer,
+    GPT2Config,
+    GPT2Tokenizer,
+)
+from models.modeling_roberta import RobertaForMaskedLM
+from models.modeling_bart import BartForConditionalGeneration
+from models.modeling_t5 import T5ForConditionalGeneration
+from models.modeling_gpt2 import GPT2LMHeadModel
+from models.modeling_bert import BertForMaskedLM
+from models.modeling_electra import ElectraForMaskedLM
 from utils import hinge_loss
 from sklearn.metrics import f1_score
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--model_name", default='roberta-large',
+                    choices=['roberta-base', 'roberta-large',
+                             'bert-base-uncased', 'bert-large-uncased',
+                             'google/electra-base-generator', 'google/electra-large-generator',
+                             'facebook/bart-base', 'facebook/bart-large',
+                             't5-small', 't5-base', 't5-large', 't5-3b',
+                             'gpt2'], type=str)
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
@@ -24,13 +48,14 @@ parser.add_argument("--k_shot", default=16, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
+parser.add_argument("--bound", default=100, type=int)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
 parser.add_argument("--alg", default='CMA', type=str)
-parser.add_argument("--random_proj", default='he', type=str)
+parser.add_argument("--random_proj", default='normal', type=str)
 parser.add_argument("--seed", default=42, type=int)
-parser.add_argument("--loss_type", default='hinge', type=str)
+parser.add_argument("--loss_type", default='ce', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
 parser.add_argument("--parallel", action='store_true', help='Whether to allow parallel evaluation')
 parser.add_argument(
@@ -49,12 +74,31 @@ parser.add_argument(
 args = parser.parse_args()
 
 # below are free hyper-params
+model_name = args.model_name
+if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+    from dataloader_t5 import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics_t5 import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+elif model_name in ['gpt2']:
+    from dataloader_gpt import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+else:
+    from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+
 task_name = args.task_name
 n_prompt_tokens = args.n_prompt_tokens
 intrinsic_dim = args.intrinsic_dim
 k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
+bound = args.bound
+# bound = math.sqrt(intrinsic_dim)
+# if random_proj == 'normal':
+#     bound = math.pow(intrinsic_dim, 0.75)
+# elif model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+#     bound = 100
+# else:
+#     bound = 5
 if args.popsize > 0:
     popsize = args.popsize
 else:
@@ -85,11 +129,6 @@ if cat_or_add == 'add':
 else:
     init_prompt_path = './nli_base_prompt.pt'
 
-model_name = 'roberta-large'
-# bound = math.sqrt(intrinsic_dim)
-# bound = math.pow(intrinsic_dim, 0.75)
-bound = 5
-
 if task_name in ['sst2', 'yelpp', 'rte', 'mrpc']:
     num_labels = 2
 elif task_name in ['snli']:
@@ -101,7 +140,8 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}_{}'.format(
+save_path = '{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}_{}'.format(
+    model_name.replace('/', '-'),
     task_name,
     n_prompt_tokens * 1024,
     intrinsic_dim,
@@ -123,15 +163,13 @@ if os.path.exists(save_path):
     exit()
 
 args.save_path = save_path
-args.bound = bound
 args.bbt_version = 'bbt'
 
 log_dir = './logs'
 fitlog.set_log_dir(log_dir)
-fitlog.commit(__file__, fit_msg=save_path)
+# fitlog.commit(__file__, fit_msg=save_path)
 fitlog.add_hyper(args)
 fitlog.add_hyper_in_file(__file__)
-
 
 random.seed(seed)
 np.random.seed(seed)
@@ -141,18 +179,61 @@ torch.manual_seed(seed)
 class LMForwardAPI:
     def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2', save_path='./results',
                  loss_type='hinge', init_prompt_path=None):
-        self.config = RobertaConfig.from_pretrained(model_name)
-        self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-        self.model = RobertaForMaskedLM.from_pretrained(
-            model_name,
-            config=self.config,
-            n_prompt_tokens=n_prompt_tokens,
-            inference_framework=inference_framework,
-            onnx_model_path=onnx_model_path,
-        )
+        if model_name in ['roberta-base', 'roberta-large']:
+            self.config = RobertaConfig.from_pretrained(model_name)
+            self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
+            self.model = RobertaForMaskedLM.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+                inference_framework=inference_framework,
+                onnx_model_path=onnx_model_path,
+            )
+            self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
+        elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+            self.config = BertConfig.from_pretrained(model_name)
+            self.tokenizer = BertTokenizer.from_pretrained(model_name)
+            self.model = BertForMaskedLM.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        elif model_name in ['google/electra-base-generator', 'google/electra-large-generator']:
+            self.config = ElectraConfig.from_pretrained(model_name)
+            self.tokenizer = ElectraTokenizer.from_pretrained(model_name)
+            self.model = ElectraForMaskedLM.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+            self.config = BartConfig.from_pretrained(model_name)
+            self.tokenizer = BartTokenizer.from_pretrained(model_name)
+            self.model = BartForConditionalGeneration.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        elif model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+            self.config = T5Config.from_pretrained(model_name)
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+            self.model = T5ForConditionalGeneration.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        elif model_name in ['gpt2']:
+            self.config = GPT2Config.from_pretrained(model_name)
+            self.tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+            self.model = GPT2LMHeadModel.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        else:
+            raise NotImplementedError
         if inference_framework == 'ort':
             self.model.roberta = None
-        self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         if cat_or_add == 'cat':
             self.model.set_concat_prompt(True)
             if init_prompt_path is not None:
@@ -163,14 +244,32 @@ class LMForwardAPI:
                 self.init_prompt = torch.zeros(n_prompt_tokens * self.config.hidden_size)
             print('Shape of initial prompt embedding: {}'.format(self.init_prompt.shape))
         else:
-            self.model.set_concat_prompt(False)
+            # self.model.set_concat_prompt(False)
             self.init_prompt = None
         self.model.to(device)
         self.model.eval()
         self.linear = torch.nn.Linear(intrinsic_dim, n_prompt_tokens * self.config.hidden_size, bias=False)
         if random_proj == 'normal':
+            # calculate std for normal distribution
+            if model_name in ['roberta-base', 'roberta-large']:
+                embedding = self.model.roberta.get_input_embeddings().weight.clone().cpu()
+            elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+                embedding = self.model.bert.get_input_embeddings().weight.clone().cpu()
+            elif model_name in ['google/electra-base-generator', 'google/electra-large-generator']:
+                embedding = self.model.electra.get_input_embeddings().weight.clone().cpu()
+            elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+                embedding = self.model.model.get_input_embeddings().weight.clone().cpu()
+            elif model_name in ['gpt2']:
+                embedding = self.model.transformer.get_input_embeddings().weight.clone().cpu()
+            else: # T5
+                embedding = self.model.get_input_embeddings().weight.clone().cpu()
+            embedding = embedding[1000: 2000]
+            emb_range = float(torch.max(torch.abs(embedding.max()), torch.abs(embedding.min())).detach().numpy())
+            std = emb_range / (np.sqrt(9 * intrinsic_dim - emb_range * emb_range))
+            print('Range of embedding: {}'.format(emb_range))
+            print('Std for the random projection: {}'.format(std))
             for p in self.linear.parameters():
-                torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
+                torch.nn.init.normal_(p, 0.0, std)
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.best_prompt = None
@@ -182,37 +281,37 @@ class LMForwardAPI:
         if save_path is not None:
             os.makedirs(save_path, exist_ok=True)
         if task_name == 'sst2':
-            self.metric = SST2Metric(target='labels', pred='logits')
+            self.metric = SST2Metric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'SST2Metric'
         elif task_name == 'agnews':
-            self.metric = AGNewsMetric(target='labels', pred='logits')
+            self.metric = AGNewsMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'AGNewsMetric'
         elif task_name == 'yelpp':
-            self.metric = YelpPMetric(target='labels', pred='logits')
+            self.metric = YelpPMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'YelpPMetric'
         elif task_name == 'dbpedia':
-            self.metric = DBPediaMetric(target='labels', pred='logits')
+            self.metric = DBPediaMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'DBPediaMetric'
         elif task_name == 'rte':
-            self.metric = RTEMetric(target='labels', pred='logits')
+            self.metric = RTEMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'RTEMetric'
         elif task_name == 'mrpc':
-            self.metric = MRPCMetric(target='labels', pred='logits')
+            self.metric = MRPCMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'f1'
             self.metric_name = 'MRPCMetric'
         elif task_name == 'snli':
-            self.metric = SNLIMetric(target='labels', pred='logits')
+            self.metric = SNLIMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'SNLIMetric'
         else:
             raise NotImplementedError
         self.margin = self.metric.margin
-        self.ce_loss = torch.nn.CrossEntropyLoss(reduction='sum')
+        self.ce_loss = torch.nn.CrossEntropyLoss(reduction='mean')
 
     def calc_metric(self, logits, target):
         label_map = self.metric.label_map
@@ -235,7 +334,7 @@ class LMForwardAPI:
         if self.loss_type == 'hinge':
             loss = hinge_loss(logits, converted_target, margin=self.margin, reduction='sum').item() / len(target)
         elif self.loss_type == 'ce':
-            loss = self.ce_loss(logits, converted_target).item() / len(target)
+            loss = self.ce_loss(logits, converted_target).item()
         elif self.loss_type == 'perf':
             loss = -1 * perf
         else:
@@ -278,7 +377,7 @@ class LMForwardAPI:
             if prompt_embedding.shape[0] > bsz:
                 raise ValueError('Provide a single prompt embedding for testing.')
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
-                                 num_workers=4, device=device, use_tqdm=True)
+                                 num_workers=1, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
             fitlog.add_best_metric(test_acc, name='test_acc')
@@ -287,11 +386,24 @@ class LMForwardAPI:
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
-                logits = self.model(
-                    input_ids=train_data['input_ids'],
-                    attention_mask=train_data['attention_mask'],
-                    mask_pos=train_data['mask_pos'],
-                )['logits']
+                if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+                    logits = self.model(
+                        input_ids=train_data['input_ids'],
+                        attention_mask=train_data['attention_mask'],
+                        decoder_input_ids=train_data['decoder_input_ids'],
+                        decoder_attention_mask=train_data['decoder_attention_mask'],
+                    )['logits']
+                elif model_name in ['gpt2']:
+                    logits = self.model(
+                        input_ids=train_data['input_ids'],
+                        attention_mask=train_data['attention_mask'],
+                    )['logits']
+                else:
+                    logits = self.model(
+                        input_ids=train_data['input_ids'],
+                        attention_mask=train_data['attention_mask'],
+                        mask_pos=train_data['mask_pos'],
+                    )['logits']
 
             if parallel:  # we have multiple queries
                 all_losses, all_perfs = [], []
@@ -334,11 +446,24 @@ class LMForwardAPI:
                 for k, v in dev_data.items():
                     dev_data[k] = v.to(device)
                 with torch.no_grad():
-                    logits = self.model(
-                        input_ids=dev_data['input_ids'],
-                        attention_mask=dev_data['attention_mask'],
-                        mask_pos=dev_data['mask_pos'],
-                    )['logits']
+                    if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+                        logits = self.model(
+                            input_ids=train_data['input_ids'],
+                            attention_mask=train_data['attention_mask'],
+                            decoder_input_ids=train_data['decoder_input_ids'],
+                            decoder_attention_mask=train_data['decoder_attention_mask'],
+                        )['logits']
+                    elif model_name in ['gpt2']:
+                        logits = self.model(
+                            input_ids=train_data['input_ids'],
+                            attention_mask=train_data['attention_mask'],
+                        )['logits']
+                    else:
+                        logits = self.model(
+                            input_ids=dev_data['input_ids'],
+                            attention_mask=dev_data['attention_mask'],
+                            mask_pos=dev_data['mask_pos'],
+                        )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
                 fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
@@ -360,8 +485,22 @@ class LMForwardAPI:
                 return loss
 
 
-tokenizer = RobertaTokenizer.from_pretrained(model_name)
-cache_fn = f"caches/data_{task_name}_{n_prompt_tokens}_{seed}.pt"
+if model_name in ['roberta-base', 'roberta-large']:
+    tokenizer = RobertaTokenizer.from_pretrained(model_name)
+elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+    tokenizer = BertTokenizer.from_pretrained(model_name)
+elif model_name in ['google/electra-base-generator', 'google/electra-large-generator']:
+    tokenizer = ElectraTokenizer.from_pretrained(model_name)
+elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+    tokenizer = BartTokenizer.from_pretrained(model_name)
+elif model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+    tokenizer = T5Tokenizer.from_pretrained(model_name)
+elif model_name in ['gpt2']:
+    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+else:
+    raise NotImplementedError
+
+cache_fn = f"caches/data_{model_name.replace('/', '-')}_{task_name}_{n_prompt_tokens}_{seed}.pt"
 DataLoader = {
     'sst2': SST2Loader,
     'agnews': AGNewsLoader,
@@ -410,9 +549,18 @@ def construct_true_few_shot_data(train_data, k_shot):
         elif dev_label_count[label] < k_shot:
             new_dev_data.append(train_data[index])
             dev_label_count[label] += 1
-    new_train_data.set_input("input_ids", "attention_mask", "labels", "mask_pos")
+
+    if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+        new_train_data.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
+        new_dev_data.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
+    elif model_name in ['gpt2']:
+        new_train_data.set_input("input_ids", "attention_mask")
+        new_dev_data.set_input("input_ids", "attention_mask")
+    else:
+        new_train_data.set_input("input_ids", "attention_mask", "mask_pos")
+        new_dev_data.set_input("input_ids", "attention_mask", "mask_pos")
+
     new_train_data.set_target("labels")
-    new_dev_data.set_input("input_ids", "attention_mask", "labels", "mask_pos")
     new_dev_data.set_target("labels")
     return new_train_data, new_dev_data
 
@@ -424,6 +572,9 @@ else:
     train_data, test_data = data_bundle.get_dataset('train'), data_bundle.get_dataset('validation')
 
 train_data, dev_data = construct_true_few_shot_data(train_data, k_shot)
+for ds in [train_data, dev_data, test_data]:
+    ds.set_pad_val('input_ids', tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0)
+    ds.set_pad_val('attention_mask', 0)
 print('# of train data: {}'.format(len(train_data)))
 print('Example:')
 print(train_data[0])
@@ -434,19 +585,45 @@ print('\n# of test data: {}'.format(len(test_data)))
 print('Example:')
 print(test_data[0])
 
-train_data = {
-    'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
-    'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
-    'mask_pos': torch.tensor(train_data['mask_pos'].get(list(range(len(train_data))))),
-    'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
-}
-
-dev_data = {
-    'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
-    'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
-    'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(dev_data))))),
-    'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
-}
+if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+    train_data = {
+        'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+        'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+        'decoder_input_ids': torch.tensor(train_data['decoder_input_ids'].get(list(range(len(train_data))))),
+        'decoder_attention_mask': torch.tensor(train_data['decoder_attention_mask'].get(list(range(len(train_data))))),
+        'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+    }
+    dev_data = {
+        'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+        'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+        'decoder_input_ids': torch.tensor(dev_data['decoder_input_ids'].get(list(range(len(dev_data))))),
+        'decoder_attention_mask': torch.tensor(dev_data['decoder_attention_mask'].get(list(range(len(dev_data))))),
+        'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
+    }
+elif model_name in ['gpt2']:
+    train_data = {
+        'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+        'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+        'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+    }
+    dev_data = {
+        'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+        'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+        'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
+    }
+else:
+    train_data = {
+        'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+        'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+        'mask_pos': torch.tensor(train_data['mask_pos'].get(list(range(len(train_data))))),
+        'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+    }
+    dev_data = {
+        'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+        'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+        'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(dev_data))))),
+        'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
+    }
 
 model_forward_api = LMForwardAPI(
     model_name=model_name,
@@ -460,11 +637,12 @@ model_forward_api = LMForwardAPI(
 cma_opts = {
     'seed': seed,
     'popsize': popsize,
-    'bounds': [-1 * bound, 1 * bound],
     'maxiter': budget if parallel else budget // popsize,
     'verbose': -1,
 }
-es = cma.CMAEvolutionStrategy(intrinsic_dim * [0], 0.5, inopts=cma_opts)
+if bound > 0:
+    cma_opts['bounds'] = [-1 * bound, 1 * bound]
+es = cma.CMAEvolutionStrategy(intrinsic_dim * [0], 1, inopts=cma_opts)
 print('Population Size: {}'.format(es.popsize))
 print('{} Evaluation.'.format('Parallel' if parallel else 'Serial'))
 if parallel:
