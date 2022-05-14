@@ -1,6 +1,7 @@
 import os
 import copy
 import time
+import math
 import random
 
 import torch
@@ -10,7 +11,7 @@ import numpy as np
 import cma
 from fastNLP import cache_results, Tester, DataSet
 from transformers import RobertaConfig, RobertaTokenizer
-from deep_modeling_roberta import RobertaForMaskedLM
+from models.deep_modeling_roberta import RobertaForMaskedLM
 from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
 from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 from utils import hinge_loss
@@ -79,7 +80,10 @@ else:
 
 model_name = 'roberta-large'
 
-bound = 5
+if random_proj == 'normal':
+    bound = math.pow(intrinsic_dim, 0.75)
+else:
+    bound = 5
 
 if task_name in ['sst2', 'yelpp', 'rte', 'mrpc']:
     num_labels = 2
@@ -237,7 +241,7 @@ class LMForwardAPI:
         if isinstance(test_data, DataSet):
             self.model.set_prompt_embedding(self.best)
             test_tester = Tester(data=test_data, model=self.model, metrics=self.metric, batch_size=batch_size,
-                                 num_workers=4, device=device, use_tqdm=True)
+                                 num_workers=1, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
             fitlog.add_best_metric(test_acc, name='test_acc')
