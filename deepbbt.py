@@ -10,14 +10,33 @@ import argparse
 import numpy as np
 import cma
 from fastNLP import cache_results, Tester, DataSet
-from transformers import RobertaConfig, RobertaTokenizer
+from transformers import (
+    RobertaConfig,
+    RobertaTokenizer,
+    BertConfig,
+    BertTokenizer,
+    ElectraConfig,
+    ElectraTokenizer,
+    BartConfig,
+    BartTokenizer,
+    T5Config,
+    T5Tokenizer,
+    GPT2Config,
+    GPT2Tokenizer,
+)
 from models.deep_modeling_roberta import RobertaForMaskedLM
+from models.deep_modeling_bart import BartForConditionalGeneration
+from models.deep_modeling_bert import BertForMaskedLM
 from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
 from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 from utils import hinge_loss
 from sklearn.metrics import f1_score
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--model_name", default='roberta-large',
+                    choices=['roberta-base', 'roberta-large',
+                             'bert-base-uncased', 'bert-large-uncased',
+                             'facebook/bart-base', 'facebook/bart-large'], type=str)
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
@@ -25,13 +44,15 @@ parser.add_argument("--k_shot", default=16, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
+parser.add_argument("--bound", default=100, type=int)
+parser.add_argument("--sigma", default=1, type=float)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
 parser.add_argument("--alg", default='CMA', type=str)
-parser.add_argument("--random_proj", default='he', type=str)
+parser.add_argument("--random_proj", default='normal', type=str)
 parser.add_argument("--seed", default=42, type=int)
-parser.add_argument("--loss_type", default='hinge', type=str)
+parser.add_argument("--loss_type", default='ce', type=str)
 parser.add_argument("--cat_or_add", default='add', type=str)
 parser.add_argument(
     "--inference_framework",
@@ -49,12 +70,15 @@ parser.add_argument(
 args = parser.parse_args()
 
 # below are free hyper-params
+model_name = args.model_name
 task_name = args.task_name
 n_prompt_tokens = args.n_prompt_tokens
 intrinsic_dim = args.intrinsic_dim
 k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
+bound = args.bound
+sigma = args.sigma
 if args.popsize > 0:
     popsize = args.popsize
 else:
@@ -78,13 +102,6 @@ if cat_or_add == 'add':
 else:
     init_prompt_path = './nli_base_prompt.pt'
 
-model_name = 'roberta-large'
-
-if random_proj == 'normal':
-    bound = math.pow(intrinsic_dim, 0.75)
-else:
-    bound = 5
-
 if task_name in ['sst2', 'yelpp', 'rte', 'mrpc']:
     num_labels = 2
 elif task_name in ['snli']:
@@ -96,7 +113,8 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'deep_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
+save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
+    model_name.replace('/', '-'),
     task_name,
     n_prompt_tokens * 1024,
     intrinsic_dim,
@@ -122,10 +140,9 @@ args.bbt_version = 'deepbbt'
 
 log_dir = './logs'
 fitlog.set_log_dir(log_dir)
-fitlog.commit(__file__, fit_msg=save_path)
+# fitlog.commit(__file__, fit_msg=save_path)
 fitlog.add_hyper(args)
 fitlog.add_hyper_in_file(__file__)
-
 
 random.seed(seed)
 np.random.seed(seed)
@@ -135,27 +152,63 @@ torch.manual_seed(seed)
 class LMForwardAPI:
     def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2', save_path='./results',
                  loss_type='hinge'):
-        self.config = RobertaConfig.from_pretrained(model_name)
-        self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
-        self.model = RobertaForMaskedLM.from_pretrained(
-            model_name,
-            config=self.config,
-            n_prompt_tokens=n_prompt_tokens,
-            inference_framework=inference_framework,
-            onnx_model_path=onnx_model_path,
-        )
+        if model_name in ['roberta-base', 'roberta-large']:
+            self.config = RobertaConfig.from_pretrained(model_name)
+            self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
+            self.model = RobertaForMaskedLM.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+                inference_framework=inference_framework,
+                onnx_model_path=onnx_model_path,
+            )
+            self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
+        elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+            self.config = BertConfig.from_pretrained(model_name)
+            self.tokenizer = BertTokenizer.from_pretrained(model_name)
+            self.model = BertForMaskedLM.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+            self.config = BartConfig.from_pretrained(model_name)
+            self.tokenizer = BartTokenizer.from_pretrained(model_name)
+            self.model = BartForConditionalGeneration.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        else:
+            raise NotImplementedError
         if inference_framework == 'ort':
             self.model.roberta = None
-        self.best_prefix = torch.zeros(self.config.num_hidden_layers, n_prompt_tokens, self.config.hidden_size, device=device)
+        self.best_prefix = torch.zeros(self.config.num_hidden_layers, n_prompt_tokens, self.config.hidden_size,
+                                       device=device)
         self.best = None
-        self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         self.init_prompt = None
         self.model.to(device)
         self.model.eval()
-        self.linear = torch.nn.ModuleList([torch.nn.Linear(intrinsic_dim, n_prompt_tokens * self.config.hidden_size, bias=False) for _ in range(self.config.num_hidden_layers)])
+        self.linear = torch.nn.ModuleList(
+            [torch.nn.Linear(intrinsic_dim, n_prompt_tokens * self.config.hidden_size, bias=False) for _ in
+             range(self.config.num_hidden_layers)])
         if random_proj == 'normal':
+            # calculate std for normal distribution
+            if model_name in ['roberta-base', 'roberta-large']:
+                embedding = self.model.roberta.get_input_embeddings().weight.clone().cpu()
+            elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+                embedding = self.model.bert.get_input_embeddings().weight.clone().cpu()
+            elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+                embedding = self.model.model.get_input_embeddings().weight.clone().cpu()
+            else:
+                raise NotImplementedError
+            embedding = embedding[1000: 2000]
+            emb_range = float(torch.max(torch.abs(embedding.max()), torch.abs(embedding.min())).detach().numpy())
+            std = emb_range / (np.sqrt(9 * intrinsic_dim - emb_range * emb_range))
+            print('Range of embedding: {}'.format(emb_range))
+            print('Std for the random projection: {}'.format(std))
             for p in self.linear.parameters():
-                torch.nn.init.normal_(p, 0.0, 1.0 / intrinsic_dim)
+                torch.nn.init.normal_(p, 0.0, std)
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.num_call = 0
@@ -166,37 +219,37 @@ class LMForwardAPI:
         if save_path is not None:
             os.makedirs(save_path, exist_ok=True)
         if task_name == 'sst2':
-            self.metric = SST2Metric(target='labels', pred='logits')
+            self.metric = SST2Metric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'SST2Metric'
         elif task_name == 'agnews':
-            self.metric = AGNewsMetric(target='labels', pred='logits')
+            self.metric = AGNewsMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'AGNewsMetric'
         elif task_name == 'yelpp':
-            self.metric = YelpPMetric(target='labels', pred='logits')
+            self.metric = YelpPMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'YelpPMetric'
         elif task_name == 'dbpedia':
-            self.metric = DBPediaMetric(target='labels', pred='logits')
+            self.metric = DBPediaMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'DBPediaMetric'
         elif task_name == 'rte':
-            self.metric = RTEMetric(target='labels', pred='logits')
+            self.metric = RTEMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'RTEMetric'
         elif task_name == 'mrpc':
-            self.metric = MRPCMetric(target='labels', pred='logits')
+            self.metric = MRPCMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'f1'
             self.metric_name = 'MRPCMetric'
         elif task_name == 'snli':
-            self.metric = SNLIMetric(target='labels', pred='logits')
+            self.metric = SNLIMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'SNLIMetric'
         else:
             raise NotImplementedError
         self.margin = self.metric.margin
-        self.ce_loss = torch.nn.CrossEntropyLoss(reduction='sum')
+        self.ce_loss = torch.nn.CrossEntropyLoss(reduction='mean')
 
     def calc_metric(self, logits, target):
         label_map = self.metric.label_map
@@ -219,14 +272,13 @@ class LMForwardAPI:
         if self.loss_type == 'hinge':
             loss = hinge_loss(logits, converted_target, margin=self.margin, reduction='sum').item() / len(target)
         elif self.loss_type == 'ce':
-            loss = self.ce_loss(logits, converted_target).item() / len(target)
+            loss = self.ce_loss(logits, converted_target).item()
         elif self.loss_type == 'perf':
             loss = -1 * perf
         else:
             raise KeyError(f'[Loss] Only support [hinge, ce, perf], got {self.loss_type} instead.')
 
         return loss, perf
-
 
     def eval(self, prompt_embedding=None, layer_id=None, test_data=None):
         self.num_call += 1
@@ -247,7 +299,6 @@ class LMForwardAPI:
             fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
-
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
@@ -305,8 +356,16 @@ class LMForwardAPI:
             return loss
 
 
-tokenizer = RobertaTokenizer.from_pretrained(model_name)
-cache_fn = f"caches/data_{task_name}_{n_prompt_tokens}_{seed}.pt"
+if model_name in ['roberta-base', 'roberta-large']:
+    tokenizer = RobertaTokenizer.from_pretrained(model_name)
+elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+    tokenizer = BertTokenizer.from_pretrained(model_name)
+elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+    tokenizer = BartTokenizer.from_pretrained(model_name)
+else:
+    raise NotImplementedError
+
+cache_fn = f"caches/data_{model_name.replace('/', '-')}_{task_name}_{n_prompt_tokens}_{seed}.pt"
 DataLoader = {
     'sst2': SST2Loader,
     'agnews': AGNewsLoader,
@@ -355,9 +414,9 @@ def construct_true_few_shot_data(train_data, k_shot):
         elif dev_label_count[label] < k_shot:
             new_dev_data.append(train_data[index])
             dev_label_count[label] += 1
-    new_train_data.set_input("input_ids", "attention_mask", "labels", "mask_pos")
+    new_train_data.set_input("input_ids", "attention_mask", "mask_pos")
     new_train_data.set_target("labels")
-    new_dev_data.set_input("input_ids", "attention_mask", "labels", "mask_pos")
+    new_dev_data.set_input("input_ids", "attention_mask", "mask_pos")
     new_dev_data.set_target("labels")
     return new_train_data, new_dev_data
 
@@ -404,12 +463,13 @@ model_forward_api = LMForwardAPI(
 cma_opts = {
     'seed': seed,
     'popsize': popsize,
-    'bounds': [-1 * bound, 1 * bound],
     'maxiter': budget // (popsize * model_forward_api.config.num_hidden_layers),
     'verbose': -1,
 }
+if bound > 0:
+    cma_opts['bounds'] = [-1 * bound, 1 * bound]
 es_list = [
-    cma.CMAEvolutionStrategy(intrinsic_dim * [0], 0.5, inopts=cma_opts)
+    cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigma, inopts=cma_opts)
     for _ in range(model_forward_api.config.num_hidden_layers)
 ]
 start_time = time.time()
@@ -419,7 +479,9 @@ for _ in range(budget // (int(popsize) * model_forward_api.config.num_hidden_lay
         solutions = es.ask()
         fitnesses = [model_forward_api.eval(x, i) for x in solutions]
         es.tell(solutions, fitnesses)
-        model_forward_api.best_prefix[i] = model_forward_api.linear[i](torch.tensor(es.result.xbest).type(torch.float32)).reshape(-1, model_forward_api.config.hidden_size)  # set best cv
+        model_forward_api.best_prefix[i] = model_forward_api.linear[i](
+            torch.tensor(es.result.xbest).type(torch.float32)).reshape(-1,
+                                                                       model_forward_api.config.hidden_size)  # set best cv
 
 end_time = time.time()
 print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
