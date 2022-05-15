@@ -49,6 +49,7 @@ parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
 parser.add_argument("--bound", default=100, type=int)
+parser.add_argument("--sigma", default=1, type=float)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
@@ -92,6 +93,7 @@ k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
 bound = args.bound
+sigma = args.sigma
 # bound = math.sqrt(intrinsic_dim)
 # if random_proj == 'normal':
 #     bound = math.pow(intrinsic_dim, 0.75)
@@ -261,11 +263,14 @@ class LMForwardAPI:
                 embedding = self.model.model.get_input_embeddings().weight.clone().cpu()
             elif model_name in ['gpt2']:
                 embedding = self.model.transformer.get_input_embeddings().weight.clone().cpu()
-            else: # T5
+            else:  # T5
                 embedding = self.model.get_input_embeddings().weight.clone().cpu()
             embedding = embedding[1000: 2000]
             emb_range = float(torch.max(torch.abs(embedding.max()), torch.abs(embedding.min())).detach().numpy())
-            std = emb_range / (np.sqrt(9 * intrinsic_dim - emb_range * emb_range))
+            if emb_range * emb_range < 4.5 * intrinsic_dim:
+                std = emb_range / (np.sqrt(9 * intrinsic_dim - emb_range * emb_range))
+            else:
+                std = 2
             print('Range of embedding: {}'.format(emb_range))
             print('Std for the random projection: {}'.format(std))
             for p in self.linear.parameters():
@@ -642,7 +647,7 @@ cma_opts = {
 }
 if bound > 0:
     cma_opts['bounds'] = [-1 * bound, 1 * bound]
-es = cma.CMAEvolutionStrategy(intrinsic_dim * [0], 1, inopts=cma_opts)
+es = cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigma, inopts=cma_opts)
 print('Population Size: {}'.format(es.popsize))
 print('{} Evaluation.'.format('Parallel' if parallel else 'Serial'))
 if parallel:
