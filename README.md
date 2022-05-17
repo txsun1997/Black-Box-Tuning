@@ -149,7 +149,7 @@ If you find this work helpful, please cite:
 
 ```bibtex
 @inproceedings{sun2022bbt,
-  title={Black-Box Tuning for Language-Model-as-as-Service}, 
+  title={Black-Box Tuning for Language-Model-as-a-Service}, 
   author={Tianxiang Sun and Yunfan Shao and Hong Qian and Xuanjing Huang and Xipeng Qiu},
   booktitle = {Proceedings of {ICML}},
   year={2022}
