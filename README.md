@@ -1,5 +1,5 @@
 # Black-Box-Tuning
-Source code for paper "[Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514)".
+This is the implementation of our ICML'22 paper "[Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514)".
 
 ## Prepare your environment
 
@@ -148,10 +148,10 @@ Fp16 optimization does not hurt performance on all tasks.
 If you find this work helpful, please cite:
 
 ```bibtex
-@article{sun2022bbt,
+@inproceedings{sun2022bbt,
   title={Black-Box Tuning for Language-Model-as-as-Service}, 
   author={Tianxiang Sun and Yunfan Shao and Hong Qian and Xuanjing Huang and Xipeng Qiu},
-  journal={arXiv preprint arXiv:2201.03514},
+  booktitle = {Proceedings of {ICML}},
   year={2022}
 }
 ```
