@@ -266,15 +266,14 @@ class LMForwardAPI:
             else:  # T5
                 embedding = self.model.get_input_embeddings().weight.clone().cpu()
             embedding = embedding[1000: 2000]
-            emb_range = float(torch.max(torch.abs(embedding.max()), torch.abs(embedding.min())).detach().numpy())
-            if emb_range * emb_range < 4.5 * intrinsic_dim:
-                std = emb_range / (np.sqrt(9 * intrinsic_dim - emb_range * emb_range))
-            else:
-                std = 2
-            print('Range of embedding: {}'.format(emb_range))
-            print('Std for the random projection: {}'.format(std))
+            mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
+            std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
+            temp = intrinsic_dim - std_hat * std_hat
+            mu = mu_hat / temp
+            std = std_hat / np.sqrt(temp)
+            print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear.parameters():
-                torch.nn.init.normal_(p, 0.0, std)
+                torch.nn.init.normal_(p, mu, std)
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.best_prompt = None

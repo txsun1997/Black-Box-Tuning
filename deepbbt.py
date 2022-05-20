@@ -152,8 +152,11 @@ torch.manual_seed(seed)
 class LMForwardAPI:
     def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2', save_path='./results',
                  loss_type='hinge'):
+        self.model_name = model_name
         if model_name in ['roberta-base', 'roberta-large']:
             self.config = RobertaConfig.from_pretrained(model_name)
+            if random_proj == 'normal':
+                self.config.output_hidden_states = True
             self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
             self.model = RobertaForMaskedLM.from_pretrained(
                 model_name,
@@ -165,6 +168,8 @@ class LMForwardAPI:
             self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
             self.config = BertConfig.from_pretrained(model_name)
+            if random_proj == 'normal':
+                self.config.output_hidden_states = True
             self.tokenizer = BertTokenizer.from_pretrained(model_name)
             self.model = BertForMaskedLM.from_pretrained(
                 model_name,
@@ -173,6 +178,8 @@ class LMForwardAPI:
             )
         elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
             self.config = BartConfig.from_pretrained(model_name)
+            if random_proj == 'normal':
+                self.config.output_hidden_states = True
             self.tokenizer = BartTokenizer.from_pretrained(model_name)
             self.model = BartForConditionalGeneration.from_pretrained(
                 model_name,
@@ -203,12 +210,15 @@ class LMForwardAPI:
             else:
                 raise NotImplementedError
             embedding = embedding[1000: 2000]
-            emb_range = float(torch.max(torch.abs(embedding.max()), torch.abs(embedding.min())).detach().numpy())
-            std = emb_range / (np.sqrt(9 * intrinsic_dim - emb_range * emb_range))
-            print('Range of embedding: {}'.format(emb_range))
-            print('Std for the random projection: {}'.format(std))
-            for p in self.linear.parameters():
-                torch.nn.init.normal_(p, 0.0, std)
+            mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
+            std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
+            temp = intrinsic_dim - std_hat * std_hat
+            mu = mu_hat / temp
+            std = std_hat / np.sqrt(temp)
+            print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
+            for p in self.linear[0].parameters():
+                torch.nn.init.normal_(p, mu, std)
+            self.intermediate_stats = [(mu, std)]
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.num_call = 0
@@ -302,11 +312,33 @@ class LMForwardAPI:
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
-                logits = self.model(
+                outputs = self.model(
                     input_ids=train_data['input_ids'],
                     attention_mask=train_data['attention_mask'],
                     mask_pos=train_data['mask_pos'],
-                )['logits']
+                )
+                logits = outputs['logits']
+                if random_proj == 'normal' and len(self.intermediate_stats) == 1:
+                    # if is the first forward pass, record the range of hidden states of each layer
+                    print('Calculating std for random projections...')
+                    if self.model_name in ['facebook/bart-base', 'facebook/bart-large']:
+                        hidden_states = outputs['encoder_hidden_states']
+                    else:
+                        hidden_states = outputs['hidden_states']
+                    for i, h in enumerate(hidden_states[1:-1]):
+                        mu_hat = np.mean(h.reshape(-1).detach().cpu().numpy())
+                        std_hat = np.std(h.reshape(-1).detach().cpu().numpy())
+                        temp = intrinsic_dim - std_hat * std_hat
+                        mu = mu_hat / temp
+                        std = std_hat / np.sqrt(temp)
+                        print('[Layer {}] mu: {} | std: {} [RandProj]  mu: {} | std: {}'
+                              .format(i + 1, mu_hat, std_hat, mu, std))
+                        for p in self.linear[i + 1].parameters():
+                            torch.nn.init.normal_(p, mu, std)
+                        self.intermediate_stats.append((mu, std))
+                    assert len(self.intermediate_stats) == self.config.num_hidden_layers
+                    self.model.config.output_hidden_states = None
+                    print('Random projections initialized.')
 
             loss, perf = self.calc_metric(logits, train_data['labels'])
             fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
