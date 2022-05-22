@@ -45,7 +45,8 @@ parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
 parser.add_argument("--bound", default=100, type=int)
-parser.add_argument("--sigma", default=1, type=float)
+parser.add_argument("--sigma1", default=1, type=float)
+parser.add_argument("--sigma2", default=0.2, type=float)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
@@ -78,7 +79,8 @@ k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
 bound = args.bound
-sigma = args.sigma
+sigma1 = args.sigma1
+sigma2 = args.sigma2
 if args.popsize > 0:
     popsize = args.popsize
 else:
@@ -113,28 +115,28 @@ elif task_name in ['dbpedia']:
 else:
     raise ValueError
 
-save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
-    model_name.replace('/', '-'),
-    task_name,
-    n_prompt_tokens * 1024,
-    intrinsic_dim,
-    k_shot * num_labels,
-    alg,
-    bound,
-    loss_type,
-    budget,
-    seed,
-    cat_or_add,
-    random_proj,
-    inference_framework
-)
-print('Results will be saved in {}'.format(save_path))
-
-if os.path.exists(save_path):
-    print('Experiment already run.')
-    exit()
-
-args.save_path = save_path
+# save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
+#     model_name.replace('/', '-'),
+#     task_name,
+#     n_prompt_tokens * 1024,
+#     intrinsic_dim,
+#     k_shot * num_labels,
+#     alg,
+#     bound,
+#     loss_type,
+#     budget,
+#     seed,
+#     cat_or_add,
+#     random_proj,
+#     inference_framework
+# )
+# print('Results will be saved in {}'.format(save_path))
+#
+# if os.path.exists(save_path):
+#     print('Experiment already run.')
+#     exit()
+#
+# args.save_path = save_path
 args.bound = bound
 args.bbt_version = 'deepbbt'
 
@@ -150,7 +152,7 @@ torch.manual_seed(seed)
 
 
 class LMForwardAPI:
-    def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2', save_path='./results',
+    def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2',
                  loss_type='hinge'):
         self.model_name = model_name
         if model_name in ['roberta-base', 'roberta-large']:
@@ -222,12 +224,12 @@ class LMForwardAPI:
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.num_call = 0
-        self.save_path = save_path
+        # self.save_path = save_path
         self.print_every = print_every
         self.eval_every = eval_every
         self.loss_type = loss_type
-        if save_path is not None:
-            os.makedirs(save_path, exist_ok=True)
+        # if save_path is not None:
+        #     os.makedirs(save_path, exist_ok=True)
         if task_name == 'sst2':
             self.metric = SST2Metric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
@@ -348,9 +350,9 @@ class LMForwardAPI:
                 self.best_train_perf = perf
                 fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
-            if self.save_path is not None:
-                with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
-                    fout.write('{}\t{}\t{}\n'.format(self.num_call, loss, perf))
+            # if self.save_path is not None:
+            #     with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
+            #         fout.write('{}\t{}\t{}\n'.format(self.num_call, loss, perf))
 
             if self.num_call % self.print_every == 0:
                 print(
@@ -377,9 +379,9 @@ class LMForwardAPI:
                     self.best_dev_perf = dev_perf
                     fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best = best_prefix.clone()
-                if self.save_path is not None:
-                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
-                        fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
+                # if self.save_path is not None:
+                #     with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                #         fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
                 print('Dev loss: {}. Dev perf: {}. Best dev perf: {}'.format(
                     round(float(dev_loss), 4),
                     round(float(dev_perf), 4),
@@ -488,7 +490,7 @@ model_forward_api = LMForwardAPI(
     model_name=model_name,
     n_prompt_tokens=n_prompt_tokens,
     task_name=task_name,
-    save_path=save_path,
+    # save_path=save_path,
     loss_type=loss_type,
 )
 
@@ -500,9 +502,14 @@ cma_opts = {
 }
 if bound > 0:
     cma_opts['bounds'] = [-1 * bound, 1 * bound]
+
+sigmas = [sigma1]
+for _ in range(model_forward_api.config.num_hidden_layers - 1):
+    sigmas.append(sigma2)
+assert len(sigmas) == model_forward_api.config.num_hidden_layers
 es_list = [
-    cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigma, inopts=cma_opts)
-    for _ in range(model_forward_api.config.num_hidden_layers)
+    cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigmas[i], inopts=cma_opts)
+    for i in range(model_forward_api.config.num_hidden_layers)
 ]
 start_time = time.time()
 
