@@ -5,8 +5,8 @@ python bbt.py \
   --k_shot 16 \
   --device "cuda:0" \
   --seed 42 \
-  --loss_type "hinge" \
+  --loss_type "ce" \
   --cat_or_add "add" \
-  --budget 5000 \
+  --budget 8000 \
   --print_every 50 \
   --eval_every 100
