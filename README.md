@@ -43,7 +43,7 @@ python bbt.py \
   --k_shot 16 \
   --device "cuda:0" \
   --seed 42 \
-  --loss_type "hinge" \
+  --loss_type "ce" \
   --cat_or_add "add" \
   --budget 8000 \
   --print_every 50 \
@@ -60,7 +60,7 @@ python bbt.py \
   --k_shot 16 \
   --device "cuda:0" \
   --seed 42 \
-  --loss_type "hinge" \
+  --loss_type "ce" \
   --cat_or_add "add" \
   --budget 300 \
   --print_every 10 \
@@ -108,7 +108,7 @@ python bbt.py \
   --k_shot 16 \
   --device "cuda:0" \
   --seed 42 \
-  --loss_type "hinge" \
+  --loss_type "ce" \
   --cat_or_add "add" \
   --budget 8000 \
   --print_every 50 \
