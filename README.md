@@ -45,7 +45,7 @@ python bbt.py \
   --seed 42 \
   --loss_type "hinge" \
   --cat_or_add "add" \
-  --budget 5000 \
+  --budget 8000 \
   --print_every 50 \
   --eval_every 100
 ```
@@ -110,7 +110,7 @@ python bbt.py \
   --seed 42 \
   --loss_type "hinge" \
   --cat_or_add "add" \
-  --budget 5000 \
+  --budget 8000 \
   --print_every 50 \
   --eval_every 100 \
   --inference_framework 'ort' \
