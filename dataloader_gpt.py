@@ -232,6 +232,7 @@ class DBPediaLoader(Loader):
         return data_bundle
 
 
+# TODO: Sentence-pair tasks not supported yet.
 class MRPCLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()

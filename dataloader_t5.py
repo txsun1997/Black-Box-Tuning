@@ -23,7 +23,7 @@ class SST2Loader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -76,7 +76,7 @@ class YelpPLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -89,11 +89,11 @@ class YelpPLoader(Loader):
         if self.n_prompt_tokens > 0:  # use randomly selected words as initial prompt
             offset = 1000
             prompt = self.tokenizer.decode(list(range(offset, offset + self.n_prompt_tokens)))
-            example['input_text'] = '%s . %s . It was <mask> .' % (prompt, example['text'].replace("\\n", " "))
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = 'text: %s %s . It was <extra_id_0> </s>' % (prompt, example['text'].replace("\\n", " "))
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
         else:
-            example['input_text'] = '%s . It was <mask> .' % (example['text'].replace("\\n", " "))
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = 'text: %s . It was <extra_id_0> </s>' % (example['text'].replace("\\n", " "))
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
         return example
 
     def _load(self, split) -> DataSet:
@@ -109,11 +109,12 @@ class YelpPLoader(Loader):
                 example = {
                     "input_ids": ins["input_ids"],
                     "attention_mask": ins["attention_mask"],
-                    "mask_pos": ins["mask_pos"],
-                    "labels": ins["labels"][0],
+                    "decoder_input_ids": ins["decoder_input_ids"],
+                    "decoder_attention_mask": ins["decoder_attention_mask"],
+                    "labels": ins["decoder_input_ids"][2],
                 }
                 ds.append(Instance(**example))
-        ds.set_input("input_ids", "attention_mask", "mask_pos")
+            ds.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
         ds.set_target("labels")
         return ds
 
@@ -127,7 +128,7 @@ class AGNewsLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -182,7 +183,7 @@ class DBPediaLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -207,11 +208,12 @@ class DBPediaLoader(Loader):
         if self.n_prompt_tokens > 0:  # use randomly selected words as initial prompt
             offset = 1000
             prompt = self.tokenizer.decode(list(range(offset, offset + self.n_prompt_tokens)))
-            example['input_text'] = '%s [ Category: <mask> ] %s' % (prompt, example['content'].strip())
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s [ Category: <extra_id_0> ] %s' % (prompt, example['content'].strip())
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
         else:
-            example['input_text'] = '[ Category: <mask> ] %s' % (example['content'].strip())
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '[ Category: <extra_id_0> ] %s' % (example['content'].strip())
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
+
         return example
 
     def _load(self, split) -> DataSet:
@@ -227,11 +229,12 @@ class DBPediaLoader(Loader):
                 example = {
                     "input_ids": ins["input_ids"],
                     "attention_mask": ins["attention_mask"],
-                    "mask_pos": ins["mask_pos"],
-                    "labels": ins["labels"][0],
+                    "decoder_input_ids": ins["decoder_input_ids"],
+                    "decoder_attention_mask": ins["decoder_attention_mask"],
+                    "labels": ins["decoder_input_ids"][2],
                 }
                 ds.append(Instance(**example))
-        ds.set_input("input_ids", "attention_mask", "mask_pos")
+            ds.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
         ds.set_target("labels")
         return ds
 
@@ -245,7 +248,7 @@ class MRPCLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -258,11 +261,13 @@ class MRPCLoader(Loader):
         if self.n_prompt_tokens > 0:  # use randomly selected words as initial prompt
             offset = 1000
             prompt = self.tokenizer.decode(list(range(offset, offset + self.n_prompt_tokens)))
-            example['input_text'] = '%s . %s ? <mask> , %s' % (prompt, example['sentence1'], example['sentence2'])
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s . %s ? <extra_id_0> , %s' % (prompt, example['sentence1'], example['sentence2'])
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
+
         else:
-            example['input_text'] = '%s ? <mask> , %s' % (example['sentence1'], example['sentence2'])
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s ? <extra_id_0> , %s' % (example['sentence1'], example['sentence2'])
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
+
         return example
 
     def _load(self, split) -> DataSet:
@@ -278,11 +283,12 @@ class MRPCLoader(Loader):
                 example = {
                     "input_ids": ins["input_ids"],
                     "attention_mask": ins["attention_mask"],
-                    "mask_pos": ins["mask_pos"],
-                    "labels": ins["labels"][0],
+                    "decoder_input_ids": ins["decoder_input_ids"],
+                    "decoder_attention_mask": ins["decoder_attention_mask"],
+                    "labels": ins["decoder_input_ids"][2],
                 }
                 ds.append(Instance(**example))
-        ds.set_input("input_ids", "attention_mask", "mask_pos")
+            ds.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
         ds.set_target("labels")
         return ds
 
@@ -296,7 +302,7 @@ class RTELoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -309,11 +315,13 @@ class RTELoader(Loader):
         if self.n_prompt_tokens > 0:  # use randomly selected words as initial prompt
             offset = 1000
             prompt = self.tokenizer.decode(list(range(offset, offset + self.n_prompt_tokens)))
-            example['input_text'] = '%s . %s ? <mask> , %s' % (prompt, example['sentence1'], example['sentence2'])
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s . %s ? <extra_id_0> , %s' % (prompt, example['sentence1'], example['sentence2'])
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
+
         else:
-            example['input_text'] = '%s ? <mask> , %s' % (example['sentence1'], example['sentence2'])
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s ? <extra_id_0> , %s' % (example['sentence1'], example['sentence2'])
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
+
         return example
 
     def _load(self, split) -> DataSet:
@@ -329,11 +337,12 @@ class RTELoader(Loader):
                 example = {
                     "input_ids": ins["input_ids"],
                     "attention_mask": ins["attention_mask"],
-                    "mask_pos": ins["mask_pos"],
-                    "labels": ins["labels"][0],
+                    "decoder_input_ids": ins["decoder_input_ids"],
+                    "decoder_attention_mask": ins["decoder_attention_mask"],
+                    "labels": ins["decoder_input_ids"][2],
                 }
                 ds.append(Instance(**example))
-        ds.set_input("input_ids", "attention_mask", "mask_pos")
+            ds.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
         ds.set_target("labels")
         return ds
 
@@ -348,7 +357,7 @@ class SNLILoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            self.tokenizer = T5Tokenizer.from_pretrained('t5-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -362,11 +371,12 @@ class SNLILoader(Loader):
         if self.n_prompt_tokens > 0:  # use randomly selected words as initial prompt
             offset = 1000
             prompt = self.tokenizer.decode(list(range(offset, offset + self.n_prompt_tokens)))
-            example['input_text'] = '%s . %s ? <mask> , %s' % (prompt, example['premise'], example['hypothesis'])
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s . %s ? <extra_id_0> , %s' % (prompt, example['premise'], example['hypothesis'])
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
         else:
-            example['input_text'] = '%s ? <mask> , %s' % (example['premise'], example['hypothesis'])
-            example['target_text'] = self.label2text[example['label']]
+            example['input_text'] = '%s ? <extra_id_0> , %s' % (example['premise'], example['hypothesis'])
+            example['target_text'] = '<pad> <extra_id_0> %s </s>' % self.label2text[example['label']]
+
         return example
 
     def _load(self, split) -> DataSet:
@@ -383,11 +393,12 @@ class SNLILoader(Loader):
                 example = {
                     "input_ids": ins["input_ids"],
                     "attention_mask": ins["attention_mask"],
-                    "mask_pos": ins["mask_pos"],
-                    "labels": ins["labels"][0],
+                    "decoder_input_ids": ins["decoder_input_ids"],
+                    "decoder_attention_mask": ins["decoder_attention_mask"],
+                    "labels": ins["decoder_input_ids"][2],
                 }
                 ds.append(Instance(**example))
-        ds.set_input("input_ids", "attention_mask", "mask_pos")
+            ds.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
         ds.set_target("labels")
         return ds
 

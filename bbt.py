@@ -40,7 +40,7 @@ parser.add_argument("--model_name", default='roberta-large',
                              'google/electra-base-generator', 'google/electra-large-generator',
                              'facebook/bart-base', 'facebook/bart-large',
                              't5-small', 't5-base', 't5-large', 't5-3b',
-                             'gpt2'], type=str)
+                             'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'], type=str)
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
@@ -79,7 +79,7 @@ model_name = args.model_name
 if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
     from dataloader_t5 import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
     from metrics_t5 import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
-elif model_name in ['gpt2']:
+elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
     from dataloader_gpt import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
     from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 else:
@@ -224,7 +224,7 @@ class LMForwardAPI:
                 config=self.config,
                 n_prompt_tokens=n_prompt_tokens,
             )
-        elif model_name in ['gpt2']:
+        elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
             self.config = GPT2Config.from_pretrained(model_name)
             self.tokenizer = GPT2Tokenizer.from_pretrained(model_name)
             self.model = GPT2LMHeadModel.from_pretrained(
@@ -261,11 +261,11 @@ class LMForwardAPI:
                 embedding = self.model.electra.get_input_embeddings().weight.clone().cpu()
             elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
                 embedding = self.model.model.get_input_embeddings().weight.clone().cpu()
-            elif model_name in ['gpt2']:
+            elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
                 embedding = self.model.transformer.get_input_embeddings().weight.clone().cpu()
             else:  # T5
                 embedding = self.model.get_input_embeddings().weight.clone().cpu()
-            embedding = embedding[1000: 2000]
+            # embedding = embedding[1000: 2000]
             mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
             std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
             temp = intrinsic_dim - std_hat * std_hat
@@ -397,7 +397,7 @@ class LMForwardAPI:
                         decoder_input_ids=train_data['decoder_input_ids'],
                         decoder_attention_mask=train_data['decoder_attention_mask'],
                     )['logits']
-                elif model_name in ['gpt2']:
+                elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
                     logits = self.model(
                         input_ids=train_data['input_ids'],
                         attention_mask=train_data['attention_mask'],
@@ -452,15 +452,15 @@ class LMForwardAPI:
                 with torch.no_grad():
                     if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
                         logits = self.model(
-                            input_ids=train_data['input_ids'],
-                            attention_mask=train_data['attention_mask'],
-                            decoder_input_ids=train_data['decoder_input_ids'],
-                            decoder_attention_mask=train_data['decoder_attention_mask'],
+                            input_ids=dev_data['input_ids'],
+                            attention_mask=dev_data['attention_mask'],
+                            decoder_input_ids=dev_data['decoder_input_ids'],
+                            decoder_attention_mask=dev_data['decoder_attention_mask'],
                         )['logits']
-                    elif model_name in ['gpt2']:
+                    elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
                         logits = self.model(
-                            input_ids=train_data['input_ids'],
-                            attention_mask=train_data['attention_mask'],
+                            input_ids=dev_data['input_ids'],
+                            attention_mask=dev_data['attention_mask'],
                         )['logits']
                     else:
                         logits = self.model(
@@ -499,7 +499,7 @@ elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
     tokenizer = BartTokenizer.from_pretrained(model_name)
 elif model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
     tokenizer = T5Tokenizer.from_pretrained(model_name)
-elif model_name in ['gpt2']:
+elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
     tokenizer = GPT2Tokenizer.from_pretrained(model_name)
 else:
     raise NotImplementedError
@@ -557,7 +557,7 @@ def construct_true_few_shot_data(train_data, k_shot):
     if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
         new_train_data.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
         new_dev_data.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
-    elif model_name in ['gpt2']:
+    elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
         new_train_data.set_input("input_ids", "attention_mask")
         new_dev_data.set_input("input_ids", "attention_mask")
     else:
@@ -576,6 +576,7 @@ else:
     train_data, test_data = data_bundle.get_dataset('train'), data_bundle.get_dataset('validation')
 
 train_data, dev_data = construct_true_few_shot_data(train_data, k_shot)
+
 for ds in [train_data, dev_data, test_data]:
     ds.set_pad_val('input_ids', tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0)
     ds.set_pad_val('attention_mask', 0)
@@ -604,7 +605,7 @@ if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
         'decoder_attention_mask': torch.tensor(dev_data['decoder_attention_mask'].get(list(range(len(dev_data))))),
         'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
     }
-elif model_name in ['gpt2']:
+elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
     train_data = {
         'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
         'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
