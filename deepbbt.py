@@ -5,7 +5,7 @@ import math
 import random
 
 import torch
-# import fitlog
+import fitlog
 import argparse
 import numpy as np
 import cma
@@ -15,8 +15,6 @@ from transformers import (
     RobertaTokenizer,
     BertConfig,
     BertTokenizer,
-    ElectraConfig,
-    ElectraTokenizer,
     BartConfig,
     BartTokenizer,
     T5Config,
@@ -26,14 +24,10 @@ from transformers import (
 )
 from models.deep_modeling_roberta import RobertaForMaskedLM
 from models.deep_modeling_bart import BartForConditionalGeneration
+from models.deep_modeling_t5 import T5ForConditionalGeneration
+from models.deep_modeling_gpt2 import GPT2LMHeadModel
 from models.deep_modeling_bert import BertForMaskedLM
 from models.deep_modeling_cpt import CPTForMaskedLM
-from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
-from dataloader_cpt import ChnSentLoader, AmazonLoader, THUCNewsLoader, BQLoader, CMNLILoader, CCPMLoader, TNewsLoader, \
-    OCNLILoader, LCQMCLoader, C3Loader
-from metric_cpt import ChnSentMetric, AmazonMetric, THUCNewsMetric, BQMetric, CMNLIMetric, CCPMMetric, TNewsMetric, \
-    OCNLIMetric, LCQMCMetric, C3Metric
 from utils import hinge_loss
 from sklearn.metrics import f1_score
 
@@ -41,7 +35,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", default='roberta-large',
                     choices=['roberta-base', 'roberta-large',
                              'bert-base-uncased', 'bert-large-uncased',
-                             'facebook/bart-base', 'facebook/bart-large', 'fnlp/cpt-large'], type=str)
+                             'facebook/bart-base', 'facebook/bart-large',
+                             't5-small', 't5-base', 't5-large', 't5-3b',
+                             'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl',
+                             'fnlp/cpt-large',
+                             ], type=str)
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
@@ -77,6 +75,22 @@ args = parser.parse_args()
 
 # below are free hyper-params
 model_name = args.model_name
+if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+    from dataloader_t5 import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics_t5 import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+    from dataloader_gpt import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+elif model_name in ['fnlp/cpt-large']:
+    from dataloader_cpt import ChnSentLoader, AmazonLoader, THUCNewsLoader, BQLoader, CMNLILoader, CCPMLoader, \
+        TNewsLoader, \
+        OCNLILoader, LCQMCLoader, C3Loader
+    from metric_cpt import ChnSentMetric, AmazonMetric, THUCNewsMetric, BQMetric, CMNLIMetric, CCPMMetric, TNewsMetric, \
+        OCNLIMetric, LCQMCMetric, C3Metric
+else:
+    from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+
 task_name = args.task_name
 n_prompt_tokens = args.n_prompt_tokens
 intrinsic_dim = args.intrinsic_dim
@@ -124,23 +138,21 @@ elif task_name in ['dbpedia', 'tnews']:
 else:
     raise ValueError
 
-save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}_{}_{}'.format(
-    model_name.replace('/', '-'),
-    task_name,
-    n_prompt_tokens * 1024,
-    intrinsic_dim,
-    k_shot * num_labels,
-    alg,
-    bound,
-    loss_type,
-    budget,
-    seed,
-    cat_or_add,
-    random_proj,
-    inference_framework,
-    sigma1,
-    sigma2
-)
+# save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
+#     model_name.replace('/', '-'),
+#     task_name,
+#     n_prompt_tokens * 1024,
+#     intrinsic_dim,
+#     k_shot * num_labels,
+#     alg,
+#     bound,
+#     loss_type,
+#     budget,
+#     seed,
+#     cat_or_add,
+#     random_proj,
+#     inference_framework
+# )
 # print('Results will be saved in {}'.format(save_path))
 #
 # if os.path.exists(save_path):
@@ -148,14 +160,13 @@ save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_bu
 #     exit()
 #
 # args.save_path = save_path
-args.bound = bound
 args.bbt_version = 'deepbbt'
 
-log_dir = './logs'
-# fitlog.set_log_dir(log_dir)
-# # fitlog.commit(__file__, fit_msg=save_path)
-# fitlog.add_hyper(args)
-# fitlog.add_hyper_in_file(__file__)
+log_dir = './v2_logs'
+fitlog.set_log_dir(log_dir)
+# fitlog.commit(__file__, fit_msg=save_path)
+fitlog.add_hyper(args)
+fitlog.add_hyper_in_file(__file__)
 
 random.seed(seed)
 np.random.seed(seed)
@@ -163,13 +174,11 @@ torch.manual_seed(seed)
 
 
 class LMForwardAPI:
-    def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2', save_path=None,
+    def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2',
                  loss_type='hinge'):
         self.model_name = model_name
         if model_name in ['roberta-base', 'roberta-large']:
             self.config = RobertaConfig.from_pretrained(model_name)
-            if random_proj == 'normal':
-                self.config.output_hidden_states = True
             self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
             self.model = RobertaForMaskedLM.from_pretrained(
                 model_name,
@@ -181,8 +190,6 @@ class LMForwardAPI:
             self.model.lm_head.bias = torch.nn.parameter.Parameter(torch.zeros(self.config.vocab_size))
         elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
             self.config = BertConfig.from_pretrained(model_name)
-            if random_proj == 'normal':
-                self.config.output_hidden_states = True
             self.tokenizer = BertTokenizer.from_pretrained(model_name)
             self.model = BertForMaskedLM.from_pretrained(
                 model_name,
@@ -191,18 +198,30 @@ class LMForwardAPI:
             )
         elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
             self.config = BartConfig.from_pretrained(model_name)
-            if random_proj == 'normal':
-                self.config.output_hidden_states = True
             self.tokenizer = BartTokenizer.from_pretrained(model_name)
             self.model = BartForConditionalGeneration.from_pretrained(
                 model_name,
                 config=self.config,
                 n_prompt_tokens=n_prompt_tokens,
             )
+        elif model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+            self.config = T5Config.from_pretrained(model_name)
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+            self.model = T5ForConditionalGeneration.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
+        elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+            self.config = GPT2Config.from_pretrained(model_name)
+            self.tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+            self.model = GPT2LMHeadModel.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
         elif model_name in ['fnlp/cpt-large']:
             self.config = BartConfig.from_pretrained(model_name)
-            if random_proj == 'normal':
-                self.config.output_hidden_states = True
             self.tokenizer = BertTokenizer.from_pretrained(model_name)
             self.model = CPTForMaskedLM.from_pretrained(
                 model_name,
@@ -211,6 +230,10 @@ class LMForwardAPI:
             )
         else:
             raise NotImplementedError
+
+        if random_proj == 'normal':
+            self.config.output_hidden_states = True
+
         if inference_framework == 'ort':
             self.model.roberta = None
         self.best_prefix = torch.zeros(self.config.num_hidden_layers, n_prompt_tokens, self.config.hidden_size,
@@ -230,9 +253,11 @@ class LMForwardAPI:
                 embedding = self.model.bert.get_input_embeddings().weight.clone().cpu()
             elif model_name in ['facebook/bart-base', 'facebook/bart-large', 'fnlp/cpt-large']:
                 embedding = self.model.model.get_input_embeddings().weight.clone().cpu()
-            else:
-                raise NotImplementedError
-            embedding = embedding[1000: 2000]
+            elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+                embedding = self.model.transformer.get_input_embeddings().weight.clone().cpu()
+            else:  # T5
+                embedding = self.model.get_input_embeddings().weight.clone().cpu()
+            # embedding = embedding[1000: 2000]
             mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
             std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
             temp = intrinsic_dim - std_hat * std_hat
@@ -240,17 +265,17 @@ class LMForwardAPI:
             std = std_hat / np.sqrt(temp)
             print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear[0].parameters():
-                torch.nn.init.normal_(p, mu, std)
+                torch.nn.init.normal_(p, 0.0, std)
             self.intermediate_stats = [(mu, std)]
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.num_call = 0
-        self.save_path = save_path
+        # self.save_path = save_path
         self.print_every = print_every
         self.eval_every = eval_every
         self.loss_type = loss_type
-        if save_path is not None:
-            os.makedirs(save_path, exist_ok=True)
+        # if save_path is not None:
+        #     os.makedirs(save_path, exist_ok=True)
         if task_name == 'sst2':
             self.metric = SST2Metric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
@@ -369,22 +394,38 @@ class LMForwardAPI:
                                  num_workers=1, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
-            # fitlog.add_best_metric(test_acc, name='test_acc')
+            fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
             for k, v in train_data.items():
                 train_data[k] = v.to(device)
             with torch.no_grad():
-                outputs = self.model(
-                    input_ids=train_data['input_ids'],
-                    attention_mask=train_data['attention_mask'],
-                    mask_pos=train_data['mask_pos'],
-                )
+                if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+                    outputs = self.model(
+                        input_ids=train_data['input_ids'],
+                        attention_mask=train_data['attention_mask'],
+                        decoder_input_ids=train_data['decoder_input_ids'],
+                        decoder_attention_mask=train_data['decoder_attention_mask'],
+                    )
+                elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+                    outputs = self.model(
+                        input_ids=train_data['input_ids'],
+                        attention_mask=train_data['attention_mask'],
+                    )
+                else:
+                    outputs = self.model(
+                        input_ids=train_data['input_ids'],
+                        attention_mask=train_data['attention_mask'],
+                        mask_pos=train_data['mask_pos'],
+                    )
                 logits = outputs['logits']
                 if random_proj == 'normal' and len(self.intermediate_stats) == 1:
                     # if is the first forward pass, record the range of hidden states of each layer
                     print('Calculating std for random projections...')
-                    if self.model_name in ['facebook/bart-base', 'facebook/bart-large', 'fnlp/cpt-large']:
+                    if self.model_name in ['facebook/bart-base', 'facebook/bart-large',
+                                           't5-small', 't5-base', 't5-large', 't5-3b',
+                                           'fnlp/cpt-large',
+                                           ]:
                         hidden_states = outputs['encoder_hidden_states']
                     else:
                         hidden_states = outputs['hidden_states']
@@ -397,23 +438,23 @@ class LMForwardAPI:
                         print('[Layer {}] mu: {} | std: {} [RandProj]  mu: {} | std: {}'
                               .format(i + 1, mu_hat, std_hat, mu, std))
                         for p in self.linear[i + 1].parameters():
-                            torch.nn.init.normal_(p, mu, std)
+                            torch.nn.init.normal_(p, 0.0, std)
                         self.intermediate_stats.append((mu, std))
                     assert len(self.intermediate_stats) == self.config.num_hidden_layers
                     self.model.config.output_hidden_states = None
                     print('Random projections initialized.')
 
             loss, perf = self.calc_metric(logits, train_data['labels'])
-            # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
-            # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
+            fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
             if perf > self.best_train_perf:
                 self.best_train_perf = perf
-                # fitlog.add_best_metric(self.best_train_perf, name='train_acc')
+                fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
-            if self.save_path is not None:
-                with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
-                    fout.write('{}\t{}\t{}\n'.format(self.num_call, loss, perf))
+            # if self.save_path is not None:
+            #     with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
+            #         fout.write('{}\t{}\t{}\n'.format(self.num_call, loss, perf))
 
             if self.num_call % self.print_every == 0:
                 print(
@@ -428,21 +469,34 @@ class LMForwardAPI:
                 for k, v in dev_data.items():
                     dev_data[k] = v.to(device)
                 with torch.no_grad():
-                    logits = self.model(
-                        input_ids=dev_data['input_ids'],
-                        attention_mask=dev_data['attention_mask'],
-                        mask_pos=dev_data['mask_pos'],
-                    )['logits']
+                    if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+                        logits = self.model(
+                            input_ids=dev_data['input_ids'],
+                            attention_mask=dev_data['attention_mask'],
+                            decoder_input_ids=dev_data['decoder_input_ids'],
+                            decoder_attention_mask=dev_data['decoder_attention_mask'],
+                        )['logits']
+                    elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+                        logits = self.model(
+                            input_ids=dev_data['input_ids'],
+                            attention_mask=dev_data['attention_mask'],
+                        )['logits']
+                    else:
+                        logits = self.model(
+                            input_ids=dev_data['input_ids'],
+                            attention_mask=dev_data['attention_mask'],
+                            mask_pos=dev_data['mask_pos'],
+                        )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
-                # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
+                fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
                 if dev_perf > self.best_dev_perf:
                     self.best_dev_perf = dev_perf
-                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
+                    fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best = best_prefix.clone()
-                if self.save_path is not None:
-                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
-                        fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
+                # if self.save_path is not None:
+                #     with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                #         fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
                 print('Dev loss: {}. Dev perf: {}. Best dev perf: {}'.format(
                     round(float(dev_loss), 4),
                     round(float(dev_perf), 4),
@@ -457,6 +511,10 @@ elif model_name in ['bert-base-uncased', 'bert-large-uncased', 'fnlp/cpt-large']
     tokenizer = BertTokenizer.from_pretrained(model_name)
 elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
     tokenizer = BartTokenizer.from_pretrained(model_name)
+elif model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+    tokenizer = T5Tokenizer.from_pretrained(model_name)
+elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
 else:
     raise NotImplementedError
 
@@ -523,9 +581,18 @@ def construct_true_few_shot_data(train_data, k_shot):
         elif dev_label_count[label] < k_shot:
             new_dev_data.append(train_data[index])
             dev_label_count[label] += 1
-    new_train_data.set_input("input_ids", "attention_mask", "mask_pos")
+
+    if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+        new_train_data.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
+        new_dev_data.set_input("input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask")
+    elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+        new_train_data.set_input("input_ids", "attention_mask")
+        new_dev_data.set_input("input_ids", "attention_mask")
+    else:
+        new_train_data.set_input("input_ids", "attention_mask", "mask_pos")
+        new_dev_data.set_input("input_ids", "attention_mask", "mask_pos")
+
     new_train_data.set_target("labels")
-    new_dev_data.set_input("input_ids", "attention_mask", "mask_pos")
     new_dev_data.set_target("labels")
     return new_train_data, new_dev_data
 
@@ -537,6 +604,11 @@ else:
     train_data, test_data = data_bundle.get_dataset('train'), data_bundle.get_dataset('validation')
 
 train_data, dev_data = construct_true_few_shot_data(train_data, k_shot)
+
+for ds in [train_data, dev_data, test_data]:
+    ds.set_pad_val('input_ids', tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0)
+    ds.set_pad_val('attention_mask', 0)
+
 print('# of train data: {}'.format(len(train_data)))
 print('Example:')
 print(train_data[0])
@@ -547,25 +619,51 @@ print('\n# of test data: {}'.format(len(test_data)))
 print('Example:')
 print(test_data[0])
 
-train_data = {
-    'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
-    'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
-    'mask_pos': torch.tensor(train_data['mask_pos'].get(list(range(len(train_data))))),
-    'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
-}
-
-dev_data = {
-    'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
-    'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
-    'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(dev_data))))),
-    'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
-}
+if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
+    train_data = {
+        'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+        'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+        'decoder_input_ids': torch.tensor(train_data['decoder_input_ids'].get(list(range(len(train_data))))),
+        'decoder_attention_mask': torch.tensor(train_data['decoder_attention_mask'].get(list(range(len(train_data))))),
+        'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+    }
+    dev_data = {
+        'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+        'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+        'decoder_input_ids': torch.tensor(dev_data['decoder_input_ids'].get(list(range(len(dev_data))))),
+        'decoder_attention_mask': torch.tensor(dev_data['decoder_attention_mask'].get(list(range(len(dev_data))))),
+        'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
+    }
+elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
+    train_data = {
+        'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+        'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+        'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+    }
+    dev_data = {
+        'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+        'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+        'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
+    }
+else:
+    train_data = {
+        'input_ids': torch.tensor(train_data['input_ids'].get(list(range(len(train_data))))),
+        'attention_mask': torch.tensor(train_data['attention_mask'].get(list(range(len(train_data))))),
+        'mask_pos': torch.tensor(train_data['mask_pos'].get(list(range(len(train_data))))),
+        'labels': torch.tensor(train_data['labels'].get(list(range(len(train_data))))),
+    }
+    dev_data = {
+        'input_ids': torch.tensor(dev_data['input_ids'].get(list(range(len(dev_data))))),
+        'attention_mask': torch.tensor(dev_data['attention_mask'].get(list(range(len(dev_data))))),
+        'mask_pos': torch.tensor(dev_data['mask_pos'].get(list(range(len(dev_data))))),
+        'labels': torch.tensor(dev_data['labels'].get(list(range(len(dev_data))))),
+    }
 
 model_forward_api = LMForwardAPI(
     model_name=model_name,
     n_prompt_tokens=n_prompt_tokens,
     task_name=task_name,
-    save_path=save_path,
+    # save_path=save_path,
     loss_type=loss_type,
 )
 
@@ -599,9 +697,7 @@ for _ in range(budget // (int(popsize) * model_forward_api.config.num_hidden_lay
 
 end_time = time.time()
 print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
-
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
-with open(os.path.join(save_path, 'test_acc.txt'), 'a') as f:
-    print('Test acc: {}'.format(round(test_acc, 4)), file=f)
-# fitlog.finish()
+print('Test acc: {}'.format(round(test_acc, 4)))
+fitlog.finish()

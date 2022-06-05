@@ -5,7 +5,7 @@ import math
 import random
 
 import torch
-# import fitlog
+import fitlog
 import argparse
 import numpy as np
 import cma
@@ -23,7 +23,7 @@ from transformers import (
     T5Tokenizer,
     GPT2Config,
     GPT2Tokenizer,
-    BartConfig as CPTConfig
+    BartConfig as CPTConfig,
 )
 from models.modeling_roberta import RobertaForMaskedLM
 from models.modeling_bart import BartForConditionalGeneration
@@ -42,7 +42,8 @@ parser.add_argument("--model_name", default='roberta-large',
                              'google/electra-base-generator', 'google/electra-large-generator',
                              'facebook/bart-base', 'facebook/bart-large',
                              't5-small', 't5-base', 't5-large', 't5-3b',
-                             'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl' 'fnlp/cpt-large'], type=str)
+                             'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl',
+                             'fnlp/cpt-large'], type=str)
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
@@ -176,11 +177,11 @@ else:
 # args.save_path = save_path
 args.bbt_version = 'bbt'
 
-log_dir = './logs'
-# fitlog.set_log_dir(log_dir)
+log_dir = './v2_logs'
+fitlog.set_log_dir(log_dir)
 # fitlog.commit(__file__, fit_msg=save_path)
-# fitlog.add_hyper(args)
-# fitlog.add_hyper_in_file(__file__)
+fitlog.add_hyper(args)
+fitlog.add_hyper_in_file(__file__)
 
 random.seed(seed)
 np.random.seed(seed)
@@ -282,7 +283,7 @@ class LMForwardAPI:
                 embedding = self.model.transformer.get_input_embeddings().weight.clone().cpu()
             else:  # T5
                 embedding = self.model.get_input_embeddings().weight.clone().cpu()
-            embedding = embedding[1000: 2000]
+            # embedding = embedding[1000: 2000]
             mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
             std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
             temp = intrinsic_dim - std_hat * std_hat
@@ -290,7 +291,7 @@ class LMForwardAPI:
             std = std_hat / np.sqrt(temp)
             print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear.parameters():
-                torch.nn.init.normal_(p, mu, std)
+                torch.nn.init.normal_(p, 0.0, std)
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.best_prompt = None
@@ -441,7 +442,7 @@ class LMForwardAPI:
                                  num_workers=1, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
-            # fitlog.add_best_metric(test_acc, name='test_acc')
+            fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
             for k, v in train_data.items():
@@ -481,12 +482,12 @@ class LMForwardAPI:
                 prompt_embedding = pe_list[best_sol]  # to be prepended to the input
             else:  # single query
                 loss, perf = self.calc_metric(logits, train_data['labels'])
-            # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
-            # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
+            fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
             if perf > self.best_train_perf:
                 self.best_train_perf = perf
-                # fitlog.add_best_metric(self.best_train_perf, name='train_acc')
+                fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
             # if self.save_path is not None:
             #     with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
@@ -527,10 +528,10 @@ class LMForwardAPI:
                         )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
-                # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
+                fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
                 if dev_perf > self.best_dev_perf:
                     self.best_dev_perf = dev_perf
-                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
+                    fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best_prompt = copy.deepcopy(tmp_prompt)
                 # if self.save_path is not None:
                 #     with open(os.path.join(self.save_path, 'dev_acc.txt'), 'a') as fout:
@@ -742,6 +743,5 @@ end_time = time.time()
 print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
-with open('res.txt', 'a+') as f:
-    print('Test acc: {}'.format(round(test_acc, 4)), file=f)
-# fitlog.finish()
+print('Test acc: {}'.format(round(test_acc, 4)))
+fitlog.finish()
