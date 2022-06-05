@@ -5,7 +5,7 @@ import math
 import random
 
 import torch
-import fitlog
+# import fitlog
 import argparse
 import numpy as np
 import cma
@@ -27,8 +27,13 @@ from transformers import (
 from models.deep_modeling_roberta import RobertaForMaskedLM
 from models.deep_modeling_bart import BartForConditionalGeneration
 from models.deep_modeling_bert import BertForMaskedLM
+from models.deep_modeling_cpt import CPTForMaskedLM
 from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
 from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+from dataloader_cpt import ChnSentLoader, AmazonLoader, THUCNewsLoader, BQLoader, CMNLILoader, CCPMLoader, TNewsLoader, \
+    OCNLILoader, LCQMCLoader, C3Loader
+from metric_cpt import ChnSentMetric, AmazonMetric, THUCNewsMetric, BQMetric, CMNLIMetric, CCPMMetric, TNewsMetric, \
+    OCNLIMetric, LCQMCMetric, C3Metric
 from utils import hinge_loss
 from sklearn.metrics import f1_score
 
@@ -36,7 +41,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--model_name", default='roberta-large',
                     choices=['roberta-base', 'roberta-large',
                              'bert-base-uncased', 'bert-large-uncased',
-                             'facebook/bart-base', 'facebook/bart-large'], type=str)
+                             'facebook/bart-base', 'facebook/bart-large', 'fnlp/cpt-large'], type=str)
 parser.add_argument("--task_name", default='sst2', type=str)
 parser.add_argument("--n_prompt_tokens", default=50, type=int)
 parser.add_argument("--intrinsic_dim", default=500, type=int)
@@ -104,32 +109,38 @@ if cat_or_add == 'add':
 else:
     init_prompt_path = './nli_base_prompt.pt'
 
-if task_name in ['sst2', 'yelpp', 'rte', 'mrpc']:
+if task_name in ['sst2', 'yelpp', 'rte', 'mrpc', 'chnsent', 'lcqmc', 'bq']:
     num_labels = 2
-elif task_name in ['snli']:
+elif task_name in ['snli', 'cmnli', 'ocnli']:
     num_labels = 3
-elif task_name in ['agnews']:
+elif task_name in ['agnews', 'ccpm', 'c3']:
     num_labels = 4
-elif task_name in ['dbpedia']:
+elif task_name in ['amazon']:
+    num_labels = 5
+elif task_name in ['thucnews']:
+    num_labels = 10
+elif task_name in ['dbpedia', 'tnews']:
     num_labels = 14
 else:
     raise ValueError
 
-# save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}'.format(
-#     model_name.replace('/', '-'),
-#     task_name,
-#     n_prompt_tokens * 1024,
-#     intrinsic_dim,
-#     k_shot * num_labels,
-#     alg,
-#     bound,
-#     loss_type,
-#     budget,
-#     seed,
-#     cat_or_add,
-#     random_proj,
-#     inference_framework
-# )
+save_path = 'deep_{}_results/{}_results/D_{}_d_{}_data_{}_{}_range_{}_loss_{}_budget_{}_seed_{}_{}_{}_{}_{}_{}'.format(
+    model_name.replace('/', '-'),
+    task_name,
+    n_prompt_tokens * 1024,
+    intrinsic_dim,
+    k_shot * num_labels,
+    alg,
+    bound,
+    loss_type,
+    budget,
+    seed,
+    cat_or_add,
+    random_proj,
+    inference_framework,
+    sigma1,
+    sigma2
+)
 # print('Results will be saved in {}'.format(save_path))
 #
 # if os.path.exists(save_path):
@@ -141,10 +152,10 @@ args.bound = bound
 args.bbt_version = 'deepbbt'
 
 log_dir = './logs'
-fitlog.set_log_dir(log_dir)
-# fitlog.commit(__file__, fit_msg=save_path)
-fitlog.add_hyper(args)
-fitlog.add_hyper_in_file(__file__)
+# fitlog.set_log_dir(log_dir)
+# # fitlog.commit(__file__, fit_msg=save_path)
+# fitlog.add_hyper(args)
+# fitlog.add_hyper_in_file(__file__)
 
 random.seed(seed)
 np.random.seed(seed)
@@ -152,7 +163,7 @@ torch.manual_seed(seed)
 
 
 class LMForwardAPI:
-    def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2',
+    def __init__(self, model_name='roberta-large', n_prompt_tokens=50, task_name='sst2', save_path=None,
                  loss_type='hinge'):
         self.model_name = model_name
         if model_name in ['roberta-base', 'roberta-large']:
@@ -188,6 +199,16 @@ class LMForwardAPI:
                 config=self.config,
                 n_prompt_tokens=n_prompt_tokens,
             )
+        elif model_name in ['fnlp/cpt-large']:
+            self.config = BartConfig.from_pretrained(model_name)
+            if random_proj == 'normal':
+                self.config.output_hidden_states = True
+            self.tokenizer = BertTokenizer.from_pretrained(model_name)
+            self.model = CPTForMaskedLM.from_pretrained(
+                model_name,
+                config=self.config,
+                n_prompt_tokens=n_prompt_tokens,
+            )
         else:
             raise NotImplementedError
         if inference_framework == 'ort':
@@ -207,7 +228,7 @@ class LMForwardAPI:
                 embedding = self.model.roberta.get_input_embeddings().weight.clone().cpu()
             elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
                 embedding = self.model.bert.get_input_embeddings().weight.clone().cpu()
-            elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
+            elif model_name in ['facebook/bart-base', 'facebook/bart-large', 'fnlp/cpt-large']:
                 embedding = self.model.model.get_input_embeddings().weight.clone().cpu()
             else:
                 raise NotImplementedError
@@ -224,12 +245,12 @@ class LMForwardAPI:
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.num_call = 0
-        # self.save_path = save_path
+        self.save_path = save_path
         self.print_every = print_every
         self.eval_every = eval_every
         self.loss_type = loss_type
-        # if save_path is not None:
-        #     os.makedirs(save_path, exist_ok=True)
+        if save_path is not None:
+            os.makedirs(save_path, exist_ok=True)
         if task_name == 'sst2':
             self.metric = SST2Metric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
@@ -258,6 +279,46 @@ class LMForwardAPI:
             self.metric = SNLIMetric(target='labels', pred='logits', tokenizer=tokenizer)
             self.metric_key = 'acc'
             self.metric_name = 'SNLIMetric'
+        elif task_name == 'chnsent':
+            self.metric = ChnSentMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'ChnSentMetric'
+        elif task_name == 'thucnews':
+            self.metric = THUCNewsMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'THUCNewsMetric'
+        elif task_name == 'lcqmc':
+            self.metric = LCQMCMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'LCQMCMetric'
+        elif task_name == 'cmnli':
+            self.metric = CMNLIMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'CMNLIMetric'
+        elif task_name == 'ocnli':
+            self.metric = OCNLIMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'OCNLIMetric'
+        elif task_name == 'amazon':
+            self.metric = AmazonMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'AmazonMetric'
+        elif task_name == 'bq':
+            self.metric = BQMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'BQMetric'
+        elif task_name == 'ccpm':
+            self.metric = CCPMMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'CCPMMetric'
+        elif task_name == 'tnews':
+            self.metric = TNewsMetric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'TNewsMetric'
+        elif task_name == 'c3':
+            self.metric = C3Metric(target='labels', pred='logits', tokenizer=tokenizer)
+            self.metric_key = 'acc'
+            self.metric_name = 'C3Metric'
         else:
             raise NotImplementedError
         self.margin = self.metric.margin
@@ -308,7 +369,7 @@ class LMForwardAPI:
                                  num_workers=1, device=device, use_tqdm=True)
             results = test_tester.test()
             test_acc = results[self.metric_name][self.metric_key]
-            fitlog.add_best_metric(test_acc, name='test_acc')
+            # fitlog.add_best_metric(test_acc, name='test_acc')
             return test_acc
         else:
             for k, v in train_data.items():
@@ -323,7 +384,7 @@ class LMForwardAPI:
                 if random_proj == 'normal' and len(self.intermediate_stats) == 1:
                     # if is the first forward pass, record the range of hidden states of each layer
                     print('Calculating std for random projections...')
-                    if self.model_name in ['facebook/bart-base', 'facebook/bart-large']:
+                    if self.model_name in ['facebook/bart-base', 'facebook/bart-large', 'fnlp/cpt-large']:
                         hidden_states = outputs['encoder_hidden_states']
                     else:
                         hidden_states = outputs['hidden_states']
@@ -343,16 +404,16 @@ class LMForwardAPI:
                     print('Random projections initialized.')
 
             loss, perf = self.calc_metric(logits, train_data['labels'])
-            fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
-            fitlog.add_metric(perf, name='train_acc', step=self.num_call)
+            # fitlog.add_loss(loss, name=self.loss_type, step=self.num_call)
+            # fitlog.add_metric(perf, name='train_acc', step=self.num_call)
 
             if perf > self.best_train_perf:
                 self.best_train_perf = perf
-                fitlog.add_best_metric(self.best_train_perf, name='train_acc')
+                # fitlog.add_best_metric(self.best_train_perf, name='train_acc')
 
-            # if self.save_path is not None:
-            #     with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
-            #         fout.write('{}\t{}\t{}\n'.format(self.num_call, loss, perf))
+            if self.save_path is not None:
+                with open(os.path.join(self.save_path, 'train_acc.txt'), 'a') as fout:
+                    fout.write('{}\t{}\t{}\n'.format(self.num_call, loss, perf))
 
             if self.num_call % self.print_every == 0:
                 print(
@@ -374,14 +435,14 @@ class LMForwardAPI:
                     )['logits']
 
                 dev_loss, dev_perf = self.calc_metric(logits, dev_data['labels'])
-                fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
+                # fitlog.add_metric(dev_perf, name='dev_acc', step=self.num_call)
                 if dev_perf > self.best_dev_perf:
                     self.best_dev_perf = dev_perf
-                    fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
+                    # fitlog.add_best_metric(self.best_dev_perf, name='dev_acc')
                     self.best = best_prefix.clone()
-                # if self.save_path is not None:
-                #     with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
-                #         fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
+                if self.save_path is not None:
+                    with open(os.path.join(self.save_path, 'dev_loss.txt'), 'a') as fout:
+                        fout.write('{}\t{}\t{}\n'.format(self.num_call, dev_loss, dev_perf))
                 print('Dev loss: {}. Dev perf: {}. Best dev perf: {}'.format(
                     round(float(dev_loss), 4),
                     round(float(dev_perf), 4),
@@ -392,7 +453,7 @@ class LMForwardAPI:
 
 if model_name in ['roberta-base', 'roberta-large']:
     tokenizer = RobertaTokenizer.from_pretrained(model_name)
-elif model_name in ['bert-base-uncased', 'bert-large-uncased']:
+elif model_name in ['bert-base-uncased', 'bert-large-uncased', 'fnlp/cpt-large']:
     tokenizer = BertTokenizer.from_pretrained(model_name)
 elif model_name in ['facebook/bart-base', 'facebook/bart-large']:
     tokenizer = BartTokenizer.from_pretrained(model_name)
@@ -400,15 +461,29 @@ else:
     raise NotImplementedError
 
 cache_fn = f"caches/data_{model_name.replace('/', '-')}_{task_name}_{n_prompt_tokens}_{seed}.pt"
-DataLoader = {
-    'sst2': SST2Loader,
-    'agnews': AGNewsLoader,
-    'yelpp': YelpPLoader,
-    'dbpedia': DBPediaLoader,
-    'rte': RTELoader,
-    'mrpc': MRPCLoader,
-    'snli': SNLILoader,
-}
+if model_name not in ['fnlp/cpt-large']:
+    DataLoader = {
+        'sst2': SST2Loader,
+        'agnews': AGNewsLoader,
+        'yelpp': YelpPLoader,
+        'dbpedia': DBPediaLoader,
+        'rte': RTELoader,
+        'mrpc': MRPCLoader,
+        'snli': SNLILoader,
+    }
+else:
+    DataLoader = {
+        'chnsent': ChnSentLoader,
+        'thucnews': THUCNewsLoader,
+        'lcqmc': LCQMCLoader,
+        'cmnli': CMNLILoader,
+        'ocnli': OCNLILoader,
+        'amazon': AmazonLoader,
+        'bq': BQLoader,
+        'ccpm': CCPMLoader,
+        'tnews': TNewsLoader,
+        'c3': C3Loader,
+    }
 
 
 @cache_results(cache_fn, _refresh=False)
@@ -490,7 +565,7 @@ model_forward_api = LMForwardAPI(
     model_name=model_name,
     n_prompt_tokens=n_prompt_tokens,
     task_name=task_name,
-    # save_path=save_path,
+    save_path=save_path,
     loss_type=loss_type,
 )
 
@@ -527,5 +602,6 @@ print('Done. Elapsed time: {} (mins)'.format((end_time - start_time) / 60))
 
 print('Evaluate on test data...')
 test_acc = model_forward_api.eval(test_data=test_data)
-print('Test acc: {}'.format(round(test_acc, 4)))
-fitlog.finish()
+with open(os.path.join(save_path, 'test_acc.txt'), 'a') as f:
+    print('Test acc: {}'.format(round(test_acc, 4)), file=f)
+# fitlog.finish()
