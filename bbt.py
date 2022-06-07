@@ -51,7 +51,7 @@ parser.add_argument("--k_shot", default=16, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
-parser.add_argument("--bound", default=100, type=int)
+parser.add_argument("--bound", default=0, type=int)
 parser.add_argument("--sigma", default=1, type=float)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
@@ -84,7 +84,7 @@ if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
     from metrics_t5 import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
     from dataloader_gpt import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-    from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+    from metric_gpt import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 elif model_name in ['fnlp/cpt-large']:
     from dataloader_cpt import ChnSentLoader, AmazonLoader, THUCNewsLoader, BQLoader, CMNLILoader, CCPMLoader, TNewsLoader, OCNLILoader, LCQMCLoader, C3Loader
     from metric_cpt import ChnSentMetric, AmazonMetric, THUCNewsMetric, BQMetric, CMNLIMetric, CCPMMetric, TNewsMetric, OCNLIMetric, LCQMCMetric, C3Metric
@@ -286,12 +286,14 @@ class LMForwardAPI:
             # embedding = embedding[1000: 2000]
             mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
             std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
-            temp = intrinsic_dim - std_hat * std_hat
-            mu = mu_hat / temp
-            std = std_hat / np.sqrt(temp)
+            mu = 0.0
+            std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma)
+            # temp = intrinsic_dim - std_hat * std_hat
+            # mu = mu_hat / temp
+            # std = std_hat / np.sqrt(temp)
             print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear.parameters():
-                torch.nn.init.normal_(p, 0.0, std)
+                torch.nn.init.normal_(p, mu, std)
         self.best_train_perf = 0.0
         self.best_dev_perf = 0.0
         self.best_prompt = None

@@ -2,6 +2,7 @@ import os
 import copy
 import time
 import math
+import pickle
 import random
 
 import torch
@@ -47,7 +48,7 @@ parser.add_argument("--k_shot", default=16, type=int)
 parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
-parser.add_argument("--bound", default=100, type=int)
+parser.add_argument("--bound", default=0, type=int)
 parser.add_argument("--sigma1", default=1, type=float)
 parser.add_argument("--sigma2", default=0.2, type=float)
 parser.add_argument("--print_every", default=50, type=int)
@@ -116,6 +117,7 @@ eval_every = args.eval_every
 cat_or_add = args.cat_or_add
 inference_framework = args.inference_framework
 onnx_model_path = args.onnx_model_path
+save_hiddens = True
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -260,9 +262,11 @@ class LMForwardAPI:
             # embedding = embedding[1000: 2000]
             mu_hat = np.mean(embedding.reshape(-1).detach().cpu().numpy())
             std_hat = np.std(embedding.reshape(-1).detach().cpu().numpy())
-            temp = intrinsic_dim - std_hat * std_hat
-            mu = mu_hat / temp
-            std = std_hat / np.sqrt(temp)
+            # temp = intrinsic_dim - std_hat * std_hat
+            # mu = mu_hat / temp
+            # std = std_hat / np.sqrt(temp)
+            mu = 0.0
+            std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma)
             print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear[0].parameters():
                 torch.nn.init.normal_(p, 0.0, std)
@@ -430,15 +434,42 @@ class LMForwardAPI:
                     else:
                         hidden_states = outputs['hidden_states']
                     for i, h in enumerate(hidden_states[1:-1]):
-                        mu_hat = np.mean(h.reshape(-1).detach().cpu().numpy())
-                        std_hat = np.std(h.reshape(-1).detach().cpu().numpy())
-                        temp = intrinsic_dim - std_hat * std_hat
-                        mu = mu_hat / temp
-                        std = std_hat / np.sqrt(temp)
-                        print('[Layer {}] mu: {} | std: {} [RandProj]  mu: {} | std: {}'
-                              .format(i + 1, mu_hat, std_hat, mu, std))
+                        if save_hiddens:
+                            hid_path = './hidstates/{}'.format(self.model_name.split('/')[-1])
+                            if not os.path.exists(hid_path):
+                                os.makedirs(hid_path, exist_ok=True)
+                            with open('{}/hidden_{}.bin'.format(hid_path, i + 1), 'wb') as f:
+                                pickle.dump(h, f)
+                        print('[Layer {}]'.format(i + 1))
+                        hidden = h.clone().reshape(-1).detach().cpu().numpy()
+                        mu_hat = np.mean(hidden)
+                        std_hat = np.std(hidden)
+                        max_h = np.max(hidden)
+                        min_h = np.min(hidden)
+                        print(' - Before clipping: mu=%.4f, std=%.4f, min=%.4f, max=%.4f' % (
+                            mu_hat, std_hat, min_h, max_h))
+                        # Clipping outliers
+                        clip_round = 0
+                        while clip_round < 5:
+                            clip_round += 1
+                            min_bound = mu_hat - 3 * std_hat
+                            max_bound = mu_hat + 3 * std_hat
+                            hidden = np.clip(hidden, min_bound, max_bound)
+                            mu_hat = np.mean(hidden)
+                            std_hat = np.std(hidden)
+                            max_h = np.max(hidden)
+                            min_h = np.min(hidden)
+                            print(' - After clipping (round %d): mu=%.4f, std=%.4f, min=%.4f, max=%.4f' % (
+                                clip_round, mu_hat, std_hat, min_h, max_h))
+                        # Calculating std dev for the random projection
+                        mu = 0.0
+                        std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma1)
+                        # temp = intrinsic_dim - std_hat * std_hat
+                        # mu = mu_hat / temp
+                        # std = std_hat / np.sqrt(temp)
+                        print(' - Random Projection: mu=%.4f, std=%.4f' % (mu, std))
                         for p in self.linear[i + 1].parameters():
-                            torch.nn.init.normal_(p, 0.0, std)
+                            torch.nn.init.normal_(p, mu, std)
                         self.intermediate_stats.append((mu, std))
                     assert len(self.intermediate_stats) == self.config.num_hidden_layers
                     self.model.config.output_hidden_states = None
@@ -677,8 +708,9 @@ if bound > 0:
     cma_opts['bounds'] = [-1 * bound, 1 * bound]
 
 sigmas = [sigma1]
-for _ in range(model_forward_api.config.num_hidden_layers - 1):
+for i in range(model_forward_api.config.num_hidden_layers - 1):
     sigmas.append(sigma2)
+    # sigmas.append(sigma1 * math.pow(0.9, i + 1))
 assert len(sigmas) == model_forward_api.config.num_hidden_layers
 es_list = [
     cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigmas[i], inopts=cma_opts)
