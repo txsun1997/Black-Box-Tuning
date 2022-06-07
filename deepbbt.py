@@ -266,7 +266,7 @@ class LMForwardAPI:
             # mu = mu_hat / temp
             # std = std_hat / np.sqrt(temp)
             mu = 0.0
-            std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma)
+            std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma1)
             print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear[0].parameters():
                 torch.nn.init.normal_(p, 0.0, std)
