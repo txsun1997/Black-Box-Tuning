@@ -1,4 +1,15 @@
 # Black-Box-Tuning for Language-Model-as-a-Service
+## Updates
+
+- 2022/07/05: Release a [paper list](https://github.com/txsun1997/LMaaS-Papers) on LMaaS, check other awesome papers! :bookmark_tabs:
+- 2022/06/05: Support T5 and GPT-2 model :clap:
+- 2022/05/15: Support BERT and BART model :clap:
+- 2022/05/04: Release BBTv2, check our [paper](https://arxiv.org/abs/2205.11200) and try it with `deepbbt.py` :tada:
+- 2022/02/18: Support ONNX Runtime optimization (training speed is doubled!) :rocket:
+- 2022/01/13: Release the first version of BBT, check our [paper](https://arxiv.org/abs/2201.03514) :tada:
+
+## Introduction
+
 Black-Box Tuning (BBT) is a gradient-free method to drive large language models (LLMs) for few-shot learning. It optimizes a sequence of soft prompt tokens prepended to the input of LLMs, without requiring gradients/back-propagation of the LLMs. Therefore, pre-trained general-purposed LLMs can be viewed as black-box models and deployed efficiently on some inference servers. In such a scenario, which we call Language-Model-as-a-Service (LMaaS), BBT can achieve comparable performance to full model tuning by only accessing model inference APIs. Generally, BBT can achieve considerable results on most language understanding datasets within 8k model forward calls.
 
 More details are provided in our ICML paper [Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514) and our arxiv paper [BBTv2: Pure Black-Box Optimization Can Be Comparable to Gradient Descent for Few-Shot Learning](https://arxiv.org/abs/2205.11200).
