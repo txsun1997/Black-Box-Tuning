@@ -1,12 +1,12 @@
 # Black-Box-Tuning for Language-Model-as-a-Service
 ## Updates
 
-- 2022/07/05: Release a [paper list](https://github.com/txsun1997/LMaaS-Papers) on LMaaS, check other awesome papers! :bookmark_tabs:
-- 2022/06/05: Support T5 and GPT-2 model :clap:
-- 2022/05/15: Support BERT and BART model :clap:
-- 2022/05/04: Release BBTv2, check our [paper](https://arxiv.org/abs/2205.11200) and try it with `deepbbt.py` :tada:
+- 2022/07/05: Release a [paper list](https://github.com/txsun1997/LMaaS-Papers) on LMaaS, check out other awesome papers! :bookmark_tabs:
+- 2022/06/05: Support T5 and GPT-2 model. :clap:
+- 2022/05/15: Support BERT and BART model. :clap:
+- 2022/05/04: Release BBTv2, check out our [paper](https://arxiv.org/abs/2205.11200) and try it with `deepbbt.py` :tada:
 - 2022/02/18: Support ONNX Runtime optimization (training speed is doubled!) :rocket:
-- 2022/01/13: Release the first version of BBT, check our [paper](https://arxiv.org/abs/2201.03514) :tada:
+- 2022/01/13: Release the first version of BBT, check out our [paper](https://arxiv.org/abs/2201.03514). :tada:
 
 ## Introduction
 
