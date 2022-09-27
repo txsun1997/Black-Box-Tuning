@@ -63,6 +63,8 @@ python bbt.py \
   --eval_every 100
 ```
 
+To obtain similar results as reported in the original paper, we recommend using `--loss_type "hinge"` for sentence-pair tasks (i.e., MRPC, SNLI, and RTE) and using `--budget 20000` for DBPedia.
+
 In addition, black-box tuning also supports parallel evaluation. That is, you can evaluate a population of solutions in parallel by putting them into a single large batch. For example,
 
 ```bash
