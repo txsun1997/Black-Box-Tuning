@@ -12,7 +12,7 @@
 
 Black-Box Tuning (BBT) is a gradient-free method to drive large language models (LLMs) for few-shot learning. It optimizes a sequence of soft prompt tokens prepended to the input of LLMs, without requiring gradients/back-propagation of the LLMs. Therefore, pre-trained general-purposed LLMs can be viewed as black-box models and deployed efficiently on some inference servers. In such a scenario, which we call Language-Model-as-a-Service (LMaaS), BBT can achieve comparable performance to full model tuning by only accessing model inference APIs. Generally, BBT can achieve considerable results on most language understanding datasets within 8k model forward calls.
 
-More details are provided in our ICML paper [Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514) and our arxiv paper [BBTv2: Pure Black-Box Optimization Can Be Comparable to Gradient Descent for Few-Shot Learning](https://arxiv.org/abs/2205.11200).
+More details are provided in our ICML-2022 paper [Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514) and our EMNLP-2022 paper [BBTv2: Towards a Gradient-Free Future with Large Language Models](https://arxiv.org/abs/2205.11200).
 
 ## Prepare your environment
 
@@ -196,9 +196,9 @@ If you find this work helpful, please cite:
 
 ```bibtex
 @article{sun2022bbtv2,
-  title={BBTv2: Pure Black-Box Optimization Can Be Comparable to Gradient Descent for Few-Shot Learning},
-  author={Sun, Tianxiang and He, Zhengfu and Qian, Hong and Huang, Xuanjing and Qiu, Xipeng},
-  journal={arXiv preprint arXiv:2205.11200},
+  title={BBTv2: Towards a Gradient-Free Future with Large Language Models},
+  author={Tianxiang Sun and Zhengfu He and Hong Qian and Yunhua Zhou and Xuanjing Huang and Xipeng Qiu},
+  booktitle = {Proceedings of {EMNLP}},
   year={2022}
 }
 ```
