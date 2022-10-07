@@ -195,7 +195,7 @@ If you find this work helpful, please cite:
 ```
 
 ```bibtex
-@article{sun2022bbtv2,
+@inproceedings{sun2022bbtv2,
   title={BBTv2: Towards a Gradient-Free Future with Large Language Models},
   author={Tianxiang Sun and Zhengfu He and Hong Qian and Yunhua Zhou and Xuanjing Huang and Xipeng Qiu},
   booktitle = {Proceedings of {EMNLP}},
