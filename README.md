@@ -1,7 +1,7 @@
 # Black-Box-Tuning for Language-Model-as-a-Service
 ## Updates
 
-- 2022/10/14: Release the latest version of BBTv2, check out the [updated results](https://docs.google.com/spreadsheets/d/1FA9zMW613OoskI_fBXuZNNBVo7RFV5OvdZ0YHnA2j5Q/edit?usp=sharing) :mag:
+- 2022/10/14: Release the latest version of BBTv2, check out the [updated results](https://docs.google.com/spreadsheets/d/1FA9zMW613OoskI_fBXuZNNBVo7RFV5OvdZ0YHnA2j5Q/edit?usp=sharing). :mag:
 - 2022/07/05: Release a [paper list](https://github.com/txsun1997/LMaaS-Papers) on LMaaS, check out other awesome papers! :bookmark_tabs:
 - 2022/06/05: Support T5 and GPT-2 model. :clap:
 - 2022/05/15: Support BERT and BART model. :clap:
@@ -41,13 +41,13 @@ Now you can run Black-Box Tuning with `run.sh`:
 bash run.sh
 ```
 
-In general, you will obtain the following results in ~10 minutes (tested on NVIDIA 3090 GPU):
+In general, you will obtain the following results in ~13 minutes (tested on NVIDIA 3090 GPU):
 
 | SST-2 split | Best Accuracy |
 | ----------- | ------------- |
 | Train       | 100 %         |
 | Dev         | 96.88 %       |
-| Test        | 88.3 %        |
+| Test        | 90.48 %       |
 
 To reproduce other experiments in our paper, change the arguments of `bbt.py`, for example, 
 
