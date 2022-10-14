@@ -11,15 +11,15 @@
 
 ## Introduction
 
-Black-Box Tuning (BBT) is a gradient-free method to drive large language models (LLMs) for few-shot learning. It optimizes a sequence of soft prompt tokens prepended to the input of LLMs, without requiring gradients/back-propagation of the LLMs. Therefore, pre-trained general-purposed LLMs can be viewed as black-box models and deployed efficiently on some inference servers. In such a scenario, which we call Language-Model-as-a-Service (LMaaS), BBT can achieve comparable performance to full model tuning by only accessing model inference APIs. Generally, BBT can achieve considerable results on most language understanding datasets within 8k model forward calls.
+Black-Box Tuning (BBT) is a gradient-free method to drive large language models (LLMs) for few-shot learning. It optimizes a sequence of soft prompt tokens prepended to the input of LLMs, without requiring gradients/back-propagation of the LLMs. Therefore, pre-trained general-purposed LLMs can be viewed as black-box models and deployed efficiently on some inference servers. In such a scenario, which we call Language-Model-as-a-Service (LMaaS), BBT can achieve comparable performance to full model tuning by only accessing model inference APIs. Generally, BBT can achieve considerable results on most language understanding datasets within 8k model forward passes.
 
-More details are provided in our ICML-2022 paper [Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514) and our EMNLP-2022 paper [BBTv2: Towards a Gradient-Free Future with Large Language Models](https://arxiv.org/abs/2205.11200).
+More details are provided in our ICML paper [Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514) and our EMNLP paper [BBTv2: Towards a Gradient-Free Future with Large Language Models](https://arxiv.org/abs/2205.11200).
 
 > To help reproduce results reported in the paper, we also release a [Google Sheets](https://docs.google.com/spreadsheets/d/1FA9zMW613OoskI_fBXuZNNBVo7RFV5OvdZ0YHnA2j5Q/edit?usp=sharing) recording BBTv2 performance on each dataset using each random seed. Feel free to reach out to me if you cannot obtain similar results.
 
 ## Prepare your environment
 
-The implementation of Black-Box Tuning is quite simple, you can check our code and easily implement it in your own environment. Or you can create a new environment to run our implementation, which is based on `pycma`, `Transformers` and `FastNLP`. Optionally, you can use `fitlog` to monitor experimental results. You can uncomment the fitlog-related lines in our code to use it.
+The implementation of Black-Box Tuning is quite simple, you can check our code and easily implement it in your own environment. Or you can create a new environment to run our implementation based on `pycma`, `Transformers` and `FastNLP`. Optionally, you can use `fitlog` to monitor experimental results. You can uncomment the fitlog-related lines in our code to use it.
 
 ```bash
 conda create --name bbt python=3.8
@@ -87,12 +87,12 @@ python bbt.py \
 ```
 ## Using BBTv2
 
-BBTv2 is an improved version of BBT. Instead of optimize the prompt merely in the input layer, BBTv2 adopts a divide-and-conquer algorithm to alternately optimize prompts in every layer (i.e., deep prompt). You can simply try BBTv2 using the following command,
+BBTv2 is an improved version of BBT. Instead of optimizing the prompt merely in the input layer, BBTv2 adopts a divide-and-conquer algorithm to alternately optimize prompts in every layer (i.e., deep prompt). You can simply try BBTv2 using the following command,
 
 ```bash
 python deepbbt.py \
   --model_name "roberta-large"\
-  --task_name "snli" \
+  --task_name "agnews" \
   --n_prompt_tokens 50 \
   --intrinsic_dim 500 \
   --k_shot 16 \
@@ -110,7 +110,7 @@ python deepbbt.py \
   --eval_every 100
 ```
 
-BBTv2 usually confers better results on many label classification tasks (e.g., DBPedia) and entailment tasks (e.g., MRPC, SNLI, RTE, etc.). Note that BBTv2 is still under development and may have some bugs :)
+BBTv2 usually confers better results on many label classification tasks (e.g., DBPedia) and entailment tasks (e.g., MRPC, SNLI, RTE, etc.). Check our [Google Sheets](https://docs.google.com/spreadsheets/d/1FA9zMW613OoskI_fBXuZNNBVo7RFV5OvdZ0YHnA2j5Q/edit?usp=sharing) if you have problem reproducing the results of BBTv2.
 
 ## Inference Optimization
 
@@ -120,7 +120,7 @@ Here we provide an implementation of inference optimization using ONNX Runtime. 
 
 SDK `onnxruntime-gpu` is required for optimization. Installation of this package can be troublesome. And there may be some environment-specific errors or unexpected performance. But in real-world scenarios, this is a part of the black box on the server side.
 
-On an NVIDIA GeForce RTX 3090 GPU with Driver Version: 470.82.00 and CUDA Version: 11.4, the following code works well to configure the environment.
+The following code works well to configure the environment on an NVIDIA GeForce RTX 3090 GPU with Driver Version: 470.82.00 and CUDA Version: 11.4.
 ```bash
 pip install transformers==4.1.1
 pip install datasets
