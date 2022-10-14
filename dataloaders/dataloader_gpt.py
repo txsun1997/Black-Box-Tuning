@@ -21,23 +21,23 @@ class SST2Loader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
         self.label2text = {
-            0: "bad",
-            1: "great",
+            0: "negative",
+            1: "positive",
         }
 
     def convert_examples(self, example):
         if self.n_prompt_tokens > 0:  # use randomly selected words as initial prompt
             offset = 1000
             prompt = self.tokenizer.decode(list(range(offset, offset + self.n_prompt_tokens)))
-            example['input_text'] = '%s . %s . It is' % (prompt, example['sentence'])
+            example['input_text'] = '%s . %s . The sentiment is' % (prompt, example['sentence'])
             example['target_text'] = self.label2text[example['label']]
         else:
-            example['input_text'] = '%s . It is' % example['sentence']
+            example['input_text'] = '%s . The sentiment is' % example['sentence']
             example['target_text'] = self.label2text[example['label']]
         return example
 
@@ -72,13 +72,13 @@ class YelpPLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
         self.label2text = {
-            0: "bad",
-            1: "great",
+            0: "negative",
+            1: "positive",
         }
 
     def convert_examples(self, example):
@@ -122,15 +122,15 @@ class AGNewsLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
         self.label2text = {
-            0: "World",
-            1: "Sports",
-            2: "Business",
-            3: "Tech"
+            0: "world",
+            1: "sports",
+            2: "business",
+            3: "tech"
         }
 
     def convert_examples(self, example):
@@ -174,25 +174,25 @@ class DBPediaLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
         self.label2text = {
-            0: "Company",
-            1: "Education",
-            2: "Artist",
-            3: "Athlete",
-            4: "Office",
-            5: "Transportation",
-            6: "Building",
-            7: "Natural",
-            8: "Village",
-            9: "Animal",
-            10: "Plant",
-            11: "Album",
-            12: "Film",
-            13: "Written",
+            0: "company",
+            1: "education",
+            2: "artist",
+            3: "athlete",
+            4: "office",
+            5: "transportation",
+            6: "building",
+            7: "natural",
+            8: "village",
+            9: "animal",
+            10: "plant",
+            11: "album",
+            12: "film",
+            13: "written",
         }
 
     def convert_examples(self, example):
@@ -208,7 +208,7 @@ class DBPediaLoader(Loader):
 
     def _load(self, split) -> DataSet:
         # load dataset with Huggingface's Datasets
-        dataset = datasets.load_dataset('dbpedia_14', split=split)
+        dataset = datasets.load_dataset('./data/dbpedia.py', split=split)
         dataset = dataset.map(self.convert_examples, load_from_cache_file=False)
         print(dataset[0])
         dataset = dataset.map(partial(convert_to_features, tokenizer=self.tokenizer), batched=True, load_from_cache_file=False)
@@ -237,7 +237,7 @@ class MRPCLoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -288,7 +288,7 @@ class RTELoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens
@@ -340,7 +340,7 @@ class SNLILoader(Loader):
     def __init__(self, tokenizer=None, n_prompt_tokens=50):
         super().__init__()
         if tokenizer is None:
-            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+            self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         else:
             self.tokenizer = tokenizer
         self.n_prompt_tokens = n_prompt_tokens

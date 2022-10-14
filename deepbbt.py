@@ -1,7 +1,5 @@
 import os
-import copy
 import time
-import math
 import pickle
 import random
 
@@ -49,8 +47,8 @@ parser.add_argument("--batch_size", default=32, type=int)
 parser.add_argument("--budget", default=8000, type=int)
 parser.add_argument("--popsize", default=20, type=int)
 parser.add_argument("--bound", default=0, type=int)
-parser.add_argument("--sigma1", default=1, type=float)
-parser.add_argument("--sigma2", default=0.2, type=float)
+parser.add_argument("--sigma", default=1, type=float)
+parser.add_argument("--alpha", default=1, type=float)
 parser.add_argument("--print_every", default=50, type=int)
 parser.add_argument("--eval_every", default=100, type=int)
 parser.add_argument("--device", default='cuda:0', type=str)
@@ -77,20 +75,20 @@ args = parser.parse_args()
 # below are free hyper-params
 model_name = args.model_name
 if model_name in ['t5-small', 't5-base', 't5-large', 't5-3b']:
-    from dataloader_t5 import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-    from metrics_t5 import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+    from dataloaders.dataloader_t5 import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics.metrics_t5 import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 elif model_name in ['gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl']:
-    from dataloader_gpt import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-    from metrics_gpt import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+    from dataloaders.dataloader_gpt import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics.metrics_gpt import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 elif model_name in ['fnlp/cpt-large']:
-    from dataloader_cpt import ChnSentLoader, AmazonLoader, THUCNewsLoader, BQLoader, CMNLILoader, CCPMLoader, \
+    from dataloaders.dataloader_cpt import ChnSentLoader, AmazonLoader, THUCNewsLoader, BQLoader, CMNLILoader, CCPMLoader, \
         TNewsLoader, \
         OCNLILoader, LCQMCLoader, C3Loader
-    from metrics_cpt import ChnSentMetric, AmazonMetric, THUCNewsMetric, BQMetric, CMNLIMetric, CCPMMetric, TNewsMetric, \
+    from metrics.metrics_cpt import ChnSentMetric, AmazonMetric, THUCNewsMetric, BQMetric, CMNLIMetric, CCPMMetric, TNewsMetric, \
         OCNLIMetric, LCQMCMetric, C3Metric
 else:
-    from dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
-    from metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
+    from dataloaders.dataloader import SST2Loader, AGNewsLoader, YelpPLoader, DBPediaLoader, RTELoader, MRPCLoader, SNLILoader
+    from metrics.metrics import SST2Metric, AGNewsMetric, YelpPMetric, DBPediaMetric, RTEMetric, MRPCMetric, SNLIMetric
 
 task_name = args.task_name
 n_prompt_tokens = args.n_prompt_tokens
@@ -99,8 +97,8 @@ k_shot = args.k_shot
 batch_size = args.batch_size
 budget = args.budget
 bound = args.bound
-sigma1 = args.sigma1
-sigma2 = args.sigma2
+sigma = args.sigma
+alpha = args.alpha
 if args.popsize > 0:
     popsize = args.popsize
 else:
@@ -117,7 +115,7 @@ eval_every = args.eval_every
 cat_or_add = args.cat_or_add
 inference_framework = args.inference_framework
 onnx_model_path = args.onnx_model_path
-save_hiddens = True
+save_hiddens = False
 
 # fixed hyper-params
 if cat_or_add == 'add':
@@ -164,7 +162,7 @@ else:
 # args.save_path = save_path
 args.bbt_version = 'deepbbt'
 
-# log_dir = './v2_logs'
+# log_dir = './logs'
 # fitlog.set_log_dir(log_dir)
 # fitlog.commit(__file__, fit_msg=save_path)
 # fitlog.add_hyper(args)
@@ -266,7 +264,7 @@ class LMForwardAPI:
             # mu = mu_hat / temp
             # std = std_hat / np.sqrt(temp)
             mu = 0.0
-            std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma1)
+            std = alpha * std_hat / (np.sqrt(intrinsic_dim) * sigma)
             print('[Embedding] mu: {} | std: {} [RandProj]  mu: {} | std: {}'.format(mu_hat, std_hat, mu, std))
             for p in self.linear[0].parameters():
                 torch.nn.init.normal_(p, 0.0, std)
@@ -463,7 +461,7 @@ class LMForwardAPI:
                                 clip_round, mu_hat, std_hat, min_h, max_h))
                         # Calculating std dev for the random projection
                         mu = 0.0
-                        std = std_hat / (np.sqrt(intrinsic_dim) * args.sigma1)
+                        std = alpha * std_hat / (np.sqrt(intrinsic_dim) * sigma)
                         # temp = intrinsic_dim - std_hat * std_hat
                         # mu = mu_hat / temp
                         # std = std_hat / np.sqrt(temp)
@@ -707,13 +705,8 @@ cma_opts = {
 if bound > 0:
     cma_opts['bounds'] = [-1 * bound, 1 * bound]
 
-sigmas = [sigma1]
-for i in range(model_forward_api.config.num_hidden_layers - 1):
-    sigmas.append(sigma2)
-    # sigmas.append(sigma1 * math.pow(0.9, i + 1))
-assert len(sigmas) == model_forward_api.config.num_hidden_layers
 es_list = [
-    cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigmas[i], inopts=cma_opts)
+    cma.CMAEvolutionStrategy(intrinsic_dim * [0], sigma, inopts=cma_opts)
     for i in range(model_forward_api.config.num_hidden_layers)
 ]
 start_time = time.time()
