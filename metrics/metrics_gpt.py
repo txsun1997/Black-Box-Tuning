@@ -3,7 +3,7 @@ import torch.nn as nn
 from fastNLP.core.metrics import MetricBase
 from fastNLP.core.utils import _get_func_signature
 from sklearn.metrics import f1_score, accuracy_score
-from transformers import T5Tokenizer
+from transformers import GPT2Tokenizer
 from utils import hinge_loss
 
 
@@ -18,7 +18,7 @@ class SST2Metric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
             tokenizer.encode('negative', add_special_tokens=False)[0]: 0,  # negative
             tokenizer.encode('positive', add_special_tokens=False)[0]: 1,  # positive
@@ -74,10 +74,10 @@ class YelpPMetric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
-            tokenizer.encode('bad', add_special_tokens=False)[0]: 0,  # negative
-            tokenizer.encode('great', add_special_tokens=False)[0]: 1,  # positive
+            tokenizer.encode('negative', add_special_tokens=False)[0]: 0,  # negative
+            tokenizer.encode('positive', add_special_tokens=False)[0]: 1,  # positive
         }
 
     def evaluate(self, pred, target, seq_len=None):
@@ -129,12 +129,12 @@ class AGNewsMetric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
-            tokenizer.encode('World', add_special_tokens=False)[0]: 0,
-            tokenizer.encode('Sports', add_special_tokens=False)[0]: 1,
-            tokenizer.encode('Business', add_special_tokens=False)[0]: 2,
-            tokenizer.encode('Tech', add_special_tokens=False)[0]: 3,
+            tokenizer.encode('world', add_special_tokens=False)[0]: 0,
+            tokenizer.encode('sports', add_special_tokens=False)[0]: 1,
+            tokenizer.encode('business', add_special_tokens=False)[0]: 2,
+            tokenizer.encode('tech', add_special_tokens=False)[0]: 3,
         }
 
     def evaluate(self, pred, target, seq_len=None):
@@ -186,22 +186,22 @@ class DBPediaMetric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
-            tokenizer.encode('Company', add_special_tokens=False)[0]: 0,
-            tokenizer.encode('Education', add_special_tokens=False)[0]: 1,
-            tokenizer.encode('Artist', add_special_tokens=False)[0]: 2,
-            tokenizer.encode('Athlete', add_special_tokens=False)[0]: 3,
-            tokenizer.encode('Office', add_special_tokens=False)[0]: 4,
-            tokenizer.encode('Transportation', add_special_tokens=False)[0]: 5,
-            tokenizer.encode('Building', add_special_tokens=False)[0]: 6,
-            tokenizer.encode('Natural', add_special_tokens=False)[0]: 7,
-            tokenizer.encode('Village', add_special_tokens=False)[0]: 8,
-            tokenizer.encode('Animal', add_special_tokens=False)[0]: 9,
-            tokenizer.encode('Plant', add_special_tokens=False)[0]: 10,
-            tokenizer.encode('Album', add_special_tokens=False)[0]: 11,
-            tokenizer.encode('Film', add_special_tokens=False)[0]: 12,
-            tokenizer.encode('Written', add_special_tokens=False)[0]: 13,
+            tokenizer.encode('company', add_special_tokens=False)[0]: 0,
+            tokenizer.encode('education', add_special_tokens=False)[0]: 1,
+            tokenizer.encode('artist', add_special_tokens=False)[0]: 2,
+            tokenizer.encode('athlete', add_special_tokens=False)[0]: 3,
+            tokenizer.encode('office', add_special_tokens=False)[0]: 4,
+            tokenizer.encode('transportation', add_special_tokens=False)[0]: 5,
+            tokenizer.encode('building', add_special_tokens=False)[0]: 6,
+            tokenizer.encode('natural', add_special_tokens=False)[0]: 7,
+            tokenizer.encode('village', add_special_tokens=False)[0]: 8,
+            tokenizer.encode('animal', add_special_tokens=False)[0]: 9,
+            tokenizer.encode('plant', add_special_tokens=False)[0]: 10,
+            tokenizer.encode('album', add_special_tokens=False)[0]: 11,
+            tokenizer.encode('film', add_special_tokens=False)[0]: 12,
+            tokenizer.encode('written', add_special_tokens=False)[0]: 13,
         }
 
     def evaluate(self, pred, target, seq_len=None):
@@ -253,7 +253,7 @@ class MRPCMetric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
             tokenizer.encode('No', add_special_tokens=False)[0]: 0,  # not dumplicate
             tokenizer.encode('Yes', add_special_tokens=False)[0]: 1,  # dumplicate
@@ -304,7 +304,7 @@ class MNLIMetric(MetricBase):
         self._pred = []
         self._target = []
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
             tokenizer.encode('Yes', add_special_tokens=False)[0]: 0,
             tokenizer.encode('Maybe', add_special_tokens=False)[0]: 1,
@@ -346,7 +346,7 @@ class RTEMetric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
             tokenizer.encode('Yes', add_special_tokens=False)[0]: 0,
             tokenizer.encode('No', add_special_tokens=False)[0]: 1,
@@ -401,7 +401,7 @@ class SNLIMetric(MetricBase):
         self.ce_fct = nn.CrossEntropyLoss(reduction='sum')
         self.margin = 2
         if tokenizer is None:
-            tokenizer = T5Tokenizer.from_pretrained('t5-base')
+            tokenizer = GPT2Tokenizer.from_pretrained('gpt2-large')
         self.label_map = {
             tokenizer.encode('Yes', add_special_tokens=False)[0]: 0,
             tokenizer.encode('Maybe', add_special_tokens=False)[0]: 1,
