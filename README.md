@@ -1,6 +1,7 @@
 # Black-Box-Tuning for Language-Model-as-a-Service
 ## Updates
 
+- 2022/10/14: Release the latest version of BBTv2, check out the [updated results](https://docs.google.com/spreadsheets/d/1FA9zMW613OoskI_fBXuZNNBVo7RFV5OvdZ0YHnA2j5Q/edit?usp=sharing) :mag:
 - 2022/07/05: Release a [paper list](https://github.com/txsun1997/LMaaS-Papers) on LMaaS, check out other awesome papers! :bookmark_tabs:
 - 2022/06/05: Support T5 and GPT-2 model. :clap:
 - 2022/05/15: Support BERT and BART model. :clap:
@@ -13,6 +14,8 @@
 Black-Box Tuning (BBT) is a gradient-free method to drive large language models (LLMs) for few-shot learning. It optimizes a sequence of soft prompt tokens prepended to the input of LLMs, without requiring gradients/back-propagation of the LLMs. Therefore, pre-trained general-purposed LLMs can be viewed as black-box models and deployed efficiently on some inference servers. In such a scenario, which we call Language-Model-as-a-Service (LMaaS), BBT can achieve comparable performance to full model tuning by only accessing model inference APIs. Generally, BBT can achieve considerable results on most language understanding datasets within 8k model forward calls.
 
 More details are provided in our ICML-2022 paper [Black-Box Tuning for Language-Model-as-a-Service](https://arxiv.org/abs/2201.03514) and our EMNLP-2022 paper [BBTv2: Towards a Gradient-Free Future with Large Language Models](https://arxiv.org/abs/2205.11200).
+
+> To help reproduce results reported in the paper, we also release a [Google Sheets](https://docs.google.com/spreadsheets/d/1FA9zMW613OoskI_fBXuZNNBVo7RFV5OvdZ0YHnA2j5Q/edit?usp=sharing) recording BBTv2 performance on each dataset using each random seed. Feel free to reach out to me if you cannot obtain similar results.
 
 ## Prepare your environment
 
@@ -98,8 +101,8 @@ python deepbbt.py \
   --loss_type "ce" \
   --cat_or_add "add" \
   --random_proj "normal" \
-  --sigma1 1 \
-  --sigma2 0.2 \
+  --sigma 0.2 \
+  --alpha 0.2 \
   --popsize 20 \
   --bound 0 \
   --budget 8000 \
