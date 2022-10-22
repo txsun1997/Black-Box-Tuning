@@ -9,6 +9,15 @@
 - 2022/02/18: Support ONNX Runtime optimization (training speed is doubled!) :rocket:
 - 2022/01/13: Release the first version of BBT, check out our [paper](https://arxiv.org/abs/2201.03514). :tada:
 
+## Quick Links
+
+- [Introduction](#introduction)
+- [Prepare your environment](#prepare-your-environment)
+- [Using BBT](#using-bbt)
+- [Using BBTv2](#using-bbtv2)
+- [Inference Optimization](#inference-optimization)
+- [Citation](#citation)
+
 ## Introduction
 
 Black-Box Tuning (BBT) is a gradient-free method to drive large language models (LLMs) for few-shot learning. It optimizes a sequence of soft prompt tokens prepended to the input of LLMs, without requiring gradients/back-propagation of the LLMs. Therefore, pre-trained general-purposed LLMs can be viewed as black-box models and deployed efficiently on some inference servers. In such a scenario, which we call Language-Model-as-a-Service (LMaaS), BBT can achieve comparable performance to full model tuning by only accessing model inference APIs. Generally, BBT can achieve considerable results on most language understanding datasets within 8k model forward passes.
