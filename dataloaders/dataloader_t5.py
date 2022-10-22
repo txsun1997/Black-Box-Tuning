@@ -218,8 +218,8 @@ class DBPediaLoader(Loader):
 
     def _load(self, split) -> DataSet:
         # load dataset with Huggingface's Datasets
-        # dataset = datasets.load_dataset('dbpedia_14', split=split)
-        dataset = datasets.load_dataset('./data/dbpedia.py', split=split)  # if you cannot reach the source of dbpedia, try this
+        dataset = datasets.load_dataset('dbpedia_14', split=split)
+        # dataset = datasets.load_dataset('./data/dbpedia.py', split=split)  # if you cannot reach the source of dbpedia, try this
         dataset = dataset.map(self.convert_examples, load_from_cache_file=False)
         print(dataset[0])
         dataset = dataset.map(partial(convert_to_features, tokenizer=self.tokenizer), batched=True, load_from_cache_file=False)
