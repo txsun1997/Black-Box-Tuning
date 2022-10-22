@@ -52,7 +52,7 @@ _HOMEPAGE = "https://wiki.dbpedia.org/develop/datasets"
 _LICENSE = "Creative Commons Attribution-ShareAlike 3.0 and the GNU Free Documentation License"
 
 _URLs = {
-    "dbpedia_14": "/remote-home/txsun/zfhe/dbpedia_csv.tar.gz",
+    "dbpedia_14": "./dbpedia_csv.tar.gz",
 }
 
 
