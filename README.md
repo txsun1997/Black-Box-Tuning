@@ -34,8 +34,8 @@ The implementation of Black-Box Tuning is quite simple, you can check our code a
 conda create --name bbt python=3.8
 conda activate bbt
 pip install transformers==4.1.1
+pip install fastNLP==0.6.0
 pip install datasets
-pip install fastNLP
 pip install cma
 pip install sklearn
 git clone https://github.com/txsun1997/Black-Box-Tuning
